@@ -34,9 +34,14 @@ def db():
     from chroma_handler import ChromaDBPopulator
 
     # Step 1: Run the database population asynchronously
+    
     print("Running database setup...")
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
     populator = ChromaDBPopulator()
-    asyncio.run(populator.populate_chroma_db())
+    loop.run_until_complete(populator.populate_chroma_db())
+
 
     # Step 2: Stop all asyncio tasks completely (ensures a clean slate)
     asyncio.set_event_loop_policy(None)  # Resets the event loop policy

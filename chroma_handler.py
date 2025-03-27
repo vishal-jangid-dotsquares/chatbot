@@ -56,7 +56,7 @@ class ChromaDBPopulator:
 
         try:
             # Load Tables
-            # await self.load_tables_data()
+            await self.load_tables_data()
 
             # Load Documents
             # await self.load_documents_data()
@@ -65,7 +65,7 @@ class ChromaDBPopulator:
             # await self.load_websites_content_data()
 
             # Load Apis data
-            # await self.load_apis_data()
+            await self.load_apis_data()
             pass
 
         except Exception as e:
@@ -377,7 +377,11 @@ class ChromaDBPopulator:
                 await asyncio.gather(*tasks)  # Runs all coroutines concurrently
 
             # Calling all the 5 threads parallely
-            asyncio.run(populate_documents(vectorstore, document_chunks))
+            # Check if an event loop is already running
+            if asyncio.get_event_loop().is_running():
+                await populate_documents(vectorstore, document_chunks)
+            else:
+                asyncio.run(populate_documents(vectorstore, document_chunks))
             return True
         except Exception as e:
             print(f"Error while adding documents - {str(e)}")
