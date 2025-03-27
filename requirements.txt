@@ -1,0 +1,27 @@
+beautifulsoup4
+en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl#sha256=1932429db727d4bff3deed6b34cfc05df17794f4a52eeb26cf8928f7c1a0fb85
+fastapi
+langchain==0.3.19
+langchain-chroma==0.2.2
+langchain-community==0.3.18
+langchain-core==0.3.39
+langchain-groq==0.2.4
+langchain-huggingface==0.1.2
+langchain-text-splitters==0.3.6
+lxml
+mysql-connector-python
+pandas
+psycopg2
+pydantic
+PyPDF2
+python-dotenv
+RapidFuzz
+redis
+requests
+selenium
+spacy
+SQLAlchemy
+streamlit
+uvicorn
+webdriver-manager
+WooCommerce

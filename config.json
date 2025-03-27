@@ -1,0 +1,43 @@
+{
+    "database": {
+        "type": "mysql",
+        "host": "localhost",
+        "port": 3306,
+        "username": "root",
+        "password": "root",
+        "database": "dummy_commerce",
+        "independent_tables": ["customers", "categories"], 
+        "relational_tables": {
+            "ordersdetails":{
+                "child":{
+                    "products":{
+                        "fk": "ProductID",
+                        "child":{
+                            "categories":{
+                                "fk": "CategoryID"
+                            }
+                        }
+                    },
+                    "orders":{
+                        "fk":"OrderID",
+                        "child": {
+                            "customers":{
+                                "fk": "CustomerID"
+                            }
+                        }
+                    }
+                }
+            },
+            "products":{
+                "child":{
+                    "categories":{
+                        "fk": "CategoryID"
+                    }
+                }
+            }
+        }, 
+        "documents":["faq.json"],
+        "website_url":"http://localhost:10003/"
+    }
+}
+  

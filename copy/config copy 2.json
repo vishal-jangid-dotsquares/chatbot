@@ -1,0 +1,34 @@
+{
+    "database": {
+        "type": "mysql",
+        "host": "localhost",
+        "port": 3306,
+        "username": "root",
+        "password": "root",
+        "database": "dummy_commerce",
+        "independent_tables": ["customers", "categories", "employees", "shippers", "suppliers"], 
+        "relational_tables": {
+            "ordersdetails":{
+                "products":{
+                    "fk": "ProductID",
+                    "child":{
+                        "categories":{"fk": "CategoryID"},
+                        "suppliers":{"fk": "SuppliersID"}
+                    }
+                },
+                "orders":{
+                    "fk":"OrderID",
+                    "child": {
+                        "customers":{"fk": "CustomerID"},
+                        "employees":{"fk": "EmployeeID"},
+                        "shippers":{"fk": "ShipperID"}
+                    }
+                }
+            }
+        }, 
+        "documents":["faq.txt"],
+        "vector_db_directory":"chatbot/chroma_directory",
+        "vector_db_reset": false 
+    }
+}
+  
