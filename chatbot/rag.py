@@ -1,17 +1,15 @@
-from html import entities
 import re
-import time
 import traceback
 import asyncio
 from typing import List, Literal, Optional
 from langchain_chroma import Chroma
 from rapidfuzz import fuzz, process as FuzzProcess
 
+from chatbot.api_loader import ApiLoader
 from chatbot.memory import CustomChatMemory
 from chatbot.models import ChatInput
 from langchain.chains import RetrievalQA
-from langchain.schema import Document, BaseRetriever
-from langchain.schema import SystemMessage, HumanMessage
+from langchain.schema import Document, BaseRetriever, SystemMessage, HumanMessage
 import initial
 
 
@@ -27,16 +25,26 @@ class DummyRetriever(BaseRetriever):
     
 
 class Rag:
-    userId:Optional[int] = None
+    userId:Optional[int] = None 
     is_userId_attached:Optional[bool] = False
     pre_prompt_message:str = ""
-    first_limit = 500
-    second_limit = 50
-    third_limit = 15
+    first_limit:int = 500
+    second_limit:int = 50
+    third_limit:int = 15
+    empty_document = [
+        Document(
+            page_content = "No data found",
+            metadata = {}
+        )
+    ]
     
+
     def __init__(self, input:ChatInput) -> None:
         self.input:ChatInput = input
         self.message = input.message.lower()
+        self.platform = initial.PLATFORM_NAME
+        self.userId = 1 #{'wordpress':1, 'mysql':14, 'sqlite':2}
+        self.base_url = 'http://localhost:10003/'
         
         # Initialise memory
         self.memory:CustomChatMemory = CustomChatMemory()
@@ -49,7 +57,14 @@ class Rag:
             if greeting_response:
                 return greeting_response
             
-            response = await self._retrieve_response()
+            # Attaching user id and preprompt
+            self.__attach_userId()
+            self.pre_prompt_message = await self.__attach_pre_prompt()
+            
+            response = await self._handle_cart_enquiry()
+            if not response:
+                response = await self._retrieve_response()
+
             if response:
                 # Summarizing new memory and saving it asynchronously
                 asyncio.create_task(
@@ -61,27 +76,49 @@ class Rag:
             return response or initial.FALLBACK_MESSAGE
         except Exception:
             traceback.print_exc()
-            return initial.FALLBACK_MESSAGE   
+            return initial.FALLBACK_MESSAGE  
+
+    async def _handle_cart_enquiry(self):
+        if self.platform not in ['wordpress', 'shopify']:
+            return None 
         
-    async def _retrieve_response(self):
-        # Attaching user id and preprompt
-        self.__attach_userId()
-        self.pre_prompt_message = await self.__attach_pre_prompt()
+        if not self.is_userId_attached:
+            return None
+
+        tag = self.__filter_tags()
+        if tag != 'cart_tag':
+            return None
         
-        retriever = await self._smart_retriever()
+        loader = ApiLoader(self.platform, self.base_url)
+        response = await loader._call_wp_api(
+                                    'cart', 
+                                    {'customer':self.userId},
+                                    populate=False
+                                )
+        print("CART RESPONS........", response)
+        if response:
+            document = [Document(page_content=response)]
+        else:
+            document = self.empty_document
+
+        retriever = DummyRetriever(filtered_docs=document)
+        return retriever
+        
+    async def _retrieve_response(self, retriever = None):
+
+        response_retriever = retriever or (await self._smart_retriever())
      
         # Create a RetrievalQA Chain
         qa_chain = RetrievalQA.from_chain_type(
             llm=initial.BASE_MODEL, 
             chain_type="stuff", 
-            retriever=retriever,
+            retriever=response_retriever,
             return_source_documents=True,
         )
         
         invoked_response = qa_chain.invoke({'query':self.pre_prompt_message})
         response = invoked_response.get('result', "No response available.")
-        return response
-        # return 'response'            
+        return response          
 
     async def _smart_retriever(self):
         # it retriever parallely
@@ -112,9 +149,7 @@ class Rag:
         self.__limit_setter('first', set_limit=len(relevant_docs))
 
         filtered_documents = self._filter_documents(division, relevant_docs)
-        self.__limit_setter('second', set_limit=len(filtered_documents))
-        print("RELEVANT DOCS............................", relevant_docs, end="\n\n")
-        print("SMART RETRIEVER RESULTES.................", filtered_documents)       
+        self.__limit_setter('second', set_limit=len(filtered_documents))    
         
         # Re-filtering the documents
         retriever = await self._re_filter_retriever(filtered_documents)
@@ -171,14 +206,13 @@ class Rag:
                     metadata={}
                 ))
 
-        print("FILTERED COTNETN,........", filtered_content)
+        print("FILTERED CONTENT........", filtered_content)
         # send filtered docs
         if filtered_docs:
             return filtered_docs
     
         # send blank docs
-        blank_docs = [Document(page_content = "No data found",metadata = {})]
-        return blank_docs
+        return self.empty_document
     
     async def _re_filter_retriever(self, merged_docs):
         temp_vector_store = Chroma.from_documents(merged_docs, initial.EMBEDDING_FUNCTION)  
@@ -186,8 +220,8 @@ class Rag:
             search_type="mmr", 
             search_kwargs= {'k':self.third_limit}
         )
+        print("LIMITS.................", self.first_limit, self.second_limit, self.third_limit)
         refined_results = temp_retriever.invoke(self.message)
-        
         retriever = DummyRetriever(filtered_docs=refined_results)
         return retriever
         
@@ -223,7 +257,7 @@ class Rag:
     
         
     def __attach_userId(self):
-        self.userId = 1 #{'wordpress':1, 'mysql':14, 'sqlite':2}
+        
         digit_pattern = initial.USER_PATTERN['digit_pattern']
         entity_pattern = initial.USER_PATTERN['entity_pattern']
         exclued_pattern = initial.USER_PATTERN['exclued_pattern']
@@ -365,7 +399,7 @@ class Rag:
         else:
             self.third_limit = 5
 
-        print("LIMITS.................", self.first_limit, self.second_limit, self.third_limit)
+        
 
             
 

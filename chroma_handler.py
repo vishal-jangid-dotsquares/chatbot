@@ -356,9 +356,8 @@ class ChromaDBPopulator:
         base_url = 'http://localhost:10003/'
         vectorstore = initial.VECTOR_DB['database'](initial.COLLECTION_NAME)
 
-        loader = ApiLoader(base_url, vectorstore)
-        await loader.load("wordpress", ['post_category', 'posts'])
-        await loader.load("woocommerce", ['product_category', 'products', 'orders'])
+        loader = ApiLoader('wordpress' ,base_url, vectorstore)
+        await loader.wp_data_loader(['post_category', 'posts', 'product_category', 'products', 'orders'])
         # cart_data = await api_loader._call_wp_api('cart', {'customer':"1"})
         
     

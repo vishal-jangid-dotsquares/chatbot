@@ -10,8 +10,8 @@ import initial
 load_dotenv()
 
 
-PLATFORM_TYPES=Literal['wordpress', 'woocommerce', 'shopify']
-WP_ENDPOINT_TYPES=Literal['posts', 'post_category', 'users', 'products', 'product_category', 'orders', 'cart']
+PLATFORM_TYPES=Literal['wordpress', 'shopify']
+WP_ENDPOINT_TYPES=Literal['posts', 'post_category', 'wp_users', 'wo_users', 'products', 'product_category', 'orders', 'cart']
 
 class ApiLoader:
     
@@ -22,7 +22,11 @@ class ApiLoader:
             Optional[str|int]
         ]
     ] = {
-        'users':{
+        'wo_users':{
+            'per_page': 1,
+            '_fields': "id,name,link"
+        },
+        'wp_users':{
             'per_page': 1,
             '_fields': "id,name,link"
         },
@@ -56,27 +60,22 @@ class ApiLoader:
     shopify_params = {}
 
     
-    def __init__(self, base_url:str, vectorstore = None) -> None:
+    def __init__(self, platform:PLATFORM_TYPES, base_url:str, vectorstore = None) -> None:
         self.base_url = base_url.strip().rstrip('/')
+        self.platform = platform
         self.vectorstore = vectorstore
-                
-    async def load(self,platform:PLATFORM_TYPES, endpoints:List[WP_ENDPOINT_TYPES]):
-        self.platform:PLATFORM_TYPES = platform
-        
-        if self.platform == 'shopify':
-            await self.shopify_loader()
-        else:
-            await self.wp_data_loader(endpoints)
             
-    async def wp_data_loader(self, endpoints:List[WP_ENDPOINT_TYPES]):   
+    async def wp_data_loader(self, endpoints:List[WP_ENDPOINT_TYPES])->None:   
         tasks = [self._fetch_wp_data(endpoint) for endpoint in endpoints]
         await asyncio.gather(*tasks)
        
         print(f"Successfully fetched all the api endpoints: {endpoints}")
     
-    
+    async def shopify_loader(self):
+        pass 
+
+
     async def _fetch_wp_data(self, endpoint:WP_ENDPOINT_TYPES):
-        self.wp_api_version = "wp/v2" if self.platform == 'wordpress' else "wc/v3"
         
         page_details = await self.__extract_total_wp_pages(endpoint)
         if not page_details:
@@ -100,6 +99,7 @@ class ApiLoader:
         return response_data
 
     async def _call_wp_api(self, endpoint:WP_ENDPOINT_TYPES, params=None, populate=True):
+        
         response = await self.__execute_wp_api(endpoint, params)
         if not response:
             return []
@@ -112,21 +112,29 @@ class ApiLoader:
         return formatted_data
             
     async def __execute_wp_api(self, endpoint:WP_ENDPOINT_TYPES, params=None):
-        # fetch credentials
-        if self.platform == "woocommerce":
+
+        wordpress_endpoints:WP_ENDPOINT_TYPES = ['posts', 'post_category', 'wp_users']
+        woocommerce_endpoints:WP_ENDPOINT_TYPES = ['products', 'product_category', 'orders', 'cart', 'wo_users']
+
+        if endpoint in wordpress_endpoints:
+            platform = 'woocommerce'
+            wp_api_version = "wp/v2" 
             key=os.getenv('WOOCOMMERCE_CONSUMER_KEY')
             secret=os.getenv('WOOCOMMERCE_CONSUMER_SECRET')
-        elif self.platform:
+        else:
+            platform = 'wordpress'
+            wp_api_version = "wc/v3"
             key=os.getenv('WORDPRESS_USERNAME')
             secret=os.getenv('WORDPRESS_PASSWORD')
+
             
         wcapi = WordpressApi(
             url=self.base_url,
             consumer_key=key,
             consumer_secret=secret,
-            version=self.wp_api_version  
+            version=wp_api_version  
         )
-        if self.platform == 'wordpress':
+        if platform == 'wordpress':
             wcapi.is_ssl = True
             wcapi.query_string_auth = False
             
@@ -143,7 +151,7 @@ class ApiLoader:
             updated_endpoint = 'orders'
             
         res = wcapi.get(updated_endpoint, params=formatted_params)
-        
+        print("h......e...EE......", res.status_code, res.json())
         if res.status_code == 200:
             return res
         else:
@@ -153,7 +161,7 @@ class ApiLoader:
           
     async def __wp_data_formatter(self, endpoint:WP_ENDPOINT_TYPES, data:List[Dict[str, Any]]):
         
-        if endpoint == 'users':
+        if endpoint == 'wo_users' or endpoint == 'wp_users':
             return await self.__wp_user_formatter(data)
         elif endpoint == 'cart':
             return await self.__wp_cart_formatter(data)
@@ -258,16 +266,14 @@ class ApiLoader:
         
         for post in data:
             author_id = post.get("author") 
-            response_data = await self.__execute_wp_api('users', {'indclude':str(author_id)})
-            if response_data and isinstance(response_data, list):
-                response_data = response_data[0]
+            response = await self.__execute_wp_api('wp_users', {'indclude':str(author_id)})
 
             formatted_posts.append({
                 "date": post.get("date"),
                 "link": post.get("link"),
                 "title": post.get("title", {}).get("rendered", ""),
                 "content": self.__clean_content(post.get("content", {}).get("rendered", "")),
-                "author": response_data or author_id,
+                "author": response.json()[0] if response else author_id,
             })
         
         return formatted_posts
@@ -321,26 +327,6 @@ class ApiLoader:
         }
         
         return data
-    
-    def __wp_json_to_document(self, endpoint:WP_ENDPOINT_TYPES, data):
-        if not isinstance(data, list):
-            data = [data]
-            
-        documents = []
-        for item in data:
-            flatten_data = self.__flatten_dict(item, endpoint) 
-            documents.append(
-                Document(
-                    page_content=", ".join(f"{key}:{value}" for key, value in flatten_data.items()),
-                    metadata={
-                        "devision": initial.DIVISIONS["db"], 
-                        "source": self.platform, 
-                        "tags": f"{endpoint.rstrip('s')}_tag"
-                    }
-                )
-            )
-        print("DOCUMENTS...................", documents)
-        return documents
 
     async def __populate_vector_db(self, documents:List[Document]):
         try:
@@ -365,7 +351,26 @@ class ApiLoader:
         except Exception as e:
             print(f"Error while adding documents - {str(e)}")
             return None
-          
+             
+    def __wp_json_to_document(self, endpoint:WP_ENDPOINT_TYPES, data):
+        if not isinstance(data, list):
+            data = [data]
+            
+        documents = []
+        for item in data:
+            flatten_data = self.__flatten_dict(item, endpoint) 
+            documents.append(
+                Document(
+                    page_content=", ".join(f"{key}:{value}" for key, value in flatten_data.items()),
+                    metadata={
+                        "devision": initial.DIVISIONS["db"], 
+                        "source": self.platform, 
+                        "tags": f"{endpoint.rstrip('s')}_tag"
+                    }
+                )
+            )
+        return documents
+ 
     def __clean_content(self, html_content):
         """
         Extracts only the visible content from HTML, removes scripts, styles, comments,
@@ -428,9 +433,4 @@ class ApiLoader:
                 items.append((new_key, v))  # Store primitive values
         return dict(items)
     
-    
-    
-    
-    async def shopify_loader(self):
-        pass            
-            
+               
