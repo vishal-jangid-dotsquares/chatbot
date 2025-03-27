@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+
+import sys
+
+def dev():
+    print("Running development server...")
+
+    import subprocess
+    import time
+
+    # Start FastAPI backend
+    fastapi_process = subprocess.Popen(["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"])
+
+    # Give FastAPI some time to start
+    time.sleep(3)
+
+    # Start Streamlit frontend
+    streamlit_process = subprocess.Popen(["streamlit", "run", "streamlit.py", "--server.headless", "true"])
+    
+    # Wait for both processes to complete
+    try:
+        fastapi_process.wait()
+        streamlit_process.wait()
+    except KeyboardInterrupt:
+        fastapi_process.terminate()
+        streamlit_process.terminate()
+
+
+def db():
+    """Runs the database setup first, then starts Uvicorn separately."""
+    
+    import asyncio
+    import subprocess
+    from chroma_handler import ChromaDBPopulator
+
+    # Step 1: Run the database population asynchronously
+    print("Running database setup...")
+    populator = ChromaDBPopulator()
+    asyncio.run(populator.populate_chroma_db())
+
+    # Step 2: Stop all asyncio tasks completely (ensures a clean slate)
+    asyncio.set_event_loop_policy(None)  # Resets the event loop policy
+    print("🚀 ChromaDB population complete!")
+
+    # Step 3: Start Uvicorn in a separate subprocess
+    print("🚀 Starting Uvicorn server...")
+    fastapi_process = subprocess.Popen(["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"])
+    try:
+        fastapi_process.wait()
+    except KeyboardInterrupt:
+        fastapi_process.terminate()
+
+
+if __name__ == "__main__":
+    if len(sys.argv) == 1:
+        dev()
+    elif sys.argv[1] == "dev":
+        dev()
+    elif sys.argv[1] == "db":
+        db()
+    else:
+        print(f"Unknown command: {sys.argv[1]}")

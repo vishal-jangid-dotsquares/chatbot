@@ -257,8 +257,8 @@ class ApiLoader:
         formatted_posts = []
         
         for post in data:
-            author_data = post.get("author") 
-            response_data = await self.__execute_wp_api('users', {'indclude':str(author_data)})
+            author_id = post.get("author") 
+            response_data = await self.__execute_wp_api('users', {'indclude':str(author_id)})
             if response_data and isinstance(response_data, list):
                 response_data = response_data[0]
 
@@ -267,7 +267,7 @@ class ApiLoader:
                 "link": post.get("link"),
                 "title": post.get("title", {}).get("rendered", ""),
                 "content": self.__clean_content(post.get("content", {}).get("rendered", "")),
-                "author": response_data or author_data,
+                "author": response_data or author_id,
             })
         
         return formatted_posts
@@ -328,7 +328,7 @@ class ApiLoader:
             
         documents = []
         for item in data:
-            flatten_data = self.__flatten_dict(data[0], endpoint) 
+            flatten_data = self.__flatten_dict(item, endpoint) 
             documents.append(
                 Document(
                     page_content=", ".join(f"{key}:{value}" for key, value in flatten_data.items()),

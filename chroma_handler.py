@@ -65,7 +65,8 @@ class ChromaDBPopulator:
             # await self.load_websites_content_data()
 
             # Load Apis data
-            await self.load_apis_data()
+            # await self.load_apis_data()
+            pass
 
         except Exception as e:
             traceback.print_exc()

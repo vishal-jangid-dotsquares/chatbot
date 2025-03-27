@@ -1,11 +1,9 @@
-from html import entities
 import re
-import time
 import traceback
 import asyncio
 from typing import List, Literal, Optional
 from langchain_chroma import Chroma
-from rapidfuzz import fuzz, process as FuzzProcess
+from rapidfuzz import fuzz, process
 
 from chatbot.memory import CustomChatMemory
 from chatbot.models import ChatInput
@@ -30,9 +28,6 @@ class Rag:
     userId:Optional[int] = None
     is_userId_attached:Optional[bool] = False
     pre_prompt_message:str = ""
-    first_limit = 500
-    second_limit = 50
-    third_limit = 15
     
     def __init__(self, input:ChatInput) -> None:
         self.input:ChatInput = input
@@ -96,7 +91,7 @@ class Rag:
                 self._retrieve_documents_parallely()
             )
             division, merged_retrievers = results
-            print("DIVISION..................", division)
+            print("retrieved ...............", division)
             
             if 'database' in division:
                 division = 'database'
@@ -107,13 +102,11 @@ class Rag:
             else:
                 division = 'website'
                 retriever = merged_retrievers[2]
+            
              
-        relevant_docs = retriever.invoke(input=self.message) 
-        self.__limit_setter('first', set_limit=len(relevant_docs))
-
+        relevant_docs = retriever.invoke(input=self.message)   
         filtered_documents = self._filter_documents(division, relevant_docs)
-        self.__limit_setter('second', set_limit=len(filtered_documents))
-        print("RELEVANT DOCS............................", relevant_docs, end="\n\n")
+        print("RELEVANT DOCS....................",division, relevant_docs)
         print("SMART RETRIEVER RESULTES.................", filtered_documents)       
         
         # Re-filtering the documents
@@ -129,9 +122,12 @@ class Rag:
         return results
 
     async def _get_retriever(self, division: Literal['database', 'document', 'website']):
-        vector_store = initial.VECTOR_DB[division](initial.COLLECTION_NAME)   
-        search_kwargs= {'k':self.first_limit}
-
+        vector_store = initial.VECTOR_DB[division](initial.COLLECTION_NAME)
+        
+        search_kwargs= {
+            'k':500 if division == 'database' else 350,
+        }
+        
         # filtering with tags
         filter_tag = None
         if division == 'database':
@@ -151,30 +147,55 @@ class Rag:
             division: Literal['database', 'document', 'website'],
             documents: List[Document]
         ):
-        print("USER ATTACHED.............", self.is_userId_attached)
-
+        
+        filtered_docs: list[Document] = []
+        fallback_docs: list[Document] = []
+                
+        # extracting tags and entities for filtering
+        entities = None
+        exclude_entity_tags = ['product_category_tag', 'post_category_tag']
+        if (division == "database" and 
+            ((self.is_userId_attached and self.userId) is False
+             or self.filter_tag in exclude_entity_tags)
+        ):
+            entities = self.__entity_extractor(division)
+        
         relevant_docs = documents
-        filtered_content = []
         for doc in relevant_docs:
-            content = doc.page_content
+            content = doc.page_content 
+            
             if division == "database" and (self.is_userId_attached and self.userId):
                 if not re.search(rf"\s{self.userId}[,]", doc.page_content):
                     continue
-            filtered_content.append(content)
 
-        filtered_docs: list[Document] = []
-        filtered_content = self._smart_word_filter(division, filtered_content)
-        if filtered_content:
-            for content in filtered_content:     
+            if entities:
+                best_match, score, _ = process.extractOne(
+                    entities, 
+                    [doc.page_content], 
+                    scorer=fuzz.WRatio
+                )
+
+                # Check if the best match is good enough
+                threshold = initial.THRESHOLD[division]
+                if not best_match or (best_match and score < threshold):
+                    content = None
+                
+            if content:
                 filtered_docs.append(Document(
                     page_content=content,
                     metadata={}
                 ))
+            fallback_docs.append(Document(
+                page_content=doc.page_content,
+                metadata={}
+            ))
 
-        print("FILTERED COTNETN,........", filtered_content)
         # send filtered docs
         if filtered_docs:
             return filtered_docs
+        # send fallback docs removing metadata
+        elif division != 'database':
+            return fallback_docs
     
         # send blank docs
         blank_docs = [Document(page_content = "No data found",metadata = {})]
@@ -184,42 +205,12 @@ class Rag:
         temp_vector_store = Chroma.from_documents(merged_docs, initial.EMBEDDING_FUNCTION)  
         temp_retriever = temp_vector_store.as_retriever(
             search_type="mmr", 
-            search_kwargs= {'k':self.third_limit}
+            search_kwargs= {'k':15}
         )
         refined_results = temp_retriever.invoke(self.message)
         
         retriever = DummyRetriever(filtered_docs=refined_results)
         return retriever
-        
-    def _smart_word_filter(self, division: Literal['database', 'document', 'website'], content_list):
-        query = self.input.message
-        exclude_filter_tags = ['product_category_tag', 'post_category_tag']
-        if division == 'database':
-            if (
-                (self.is_userId_attached and self.userId)
-                or
-                (self.filter_tag in exclude_filter_tags)
-            ):
-                return content_list
-            
-            entities = self.__entity_extractor() or query
-            print("ENTITIES...............", entities)
-
-        if content_list:
-            # FuzzProcess.extract_iter **use it when you have large dataset**
-            matches = FuzzProcess.extract(
-                query, 
-                content_list, 
-                limit=self.second_limit,
-                scorer=fuzz.partial_ratio, 
-                score_cutoff=initial.FILTERING_MINIMUM_SCORE[division], 
-                score_hint=70
-            )
-            print("MATCHES..................", matches)
-            return list(map(lambda x: x[0], matches))
-        
-        return content_list
-
     
         
     def __attach_userId(self):
@@ -264,13 +255,17 @@ class Rag:
             asyncio.create_task(self.memory.add_memory(self.message, response))
             
         return response
-
-    def __entity_extractor(self):
+    
+    def __entity_extractor(self, division: Literal['database', 'document', 'website']):
         # Extract named entities
-        grammer_entities = ['NOUN', 'PROPN', 'ADJ']          
+        grammer_entities = ['NOUN', 'PROPN', 'ADJ']
+        if division == "document":
+            grammer_entities.append('VERB')
+            
         doc = initial.NLP_PROCESSOR(self.input.message)
         entities = " ".join(list(set(ent.text for ent in doc if ent.pos_ in grammer_entities)))
-        return entities or []
+        print("ENTTITIES...........", entities, division)
+        return entities or None
     
     def __filter_tags(self):
         cart_pattern = initial.FILTER_TAG_PATTERNS['cart_pattern']
@@ -325,47 +320,11 @@ class Rag:
             SystemMessage(content=system_prompt),
             HumanMessage(content=self.message)
         ])
-
         content = response.content
+        print("DIVISION RESPONSE.........", content)
         if any(division for division in ['website', 'database', 'document'] if division in content):
             return content
         
         return 'database'
     
-    def __limit_setter(self, level: Literal['first', 'second', 'third'], set_limit: int):
-        setattr(self, f"{level}_limit", set_limit)
-
-        # Adjust second limit based on first limit
-        if self.first_limit > 1200:
-            self.second_limit = 120
-        elif self.first_limit > 600:
-            self.second_limit = 80
-        elif self.first_limit > 300:
-            self.second_limit = 50
-        elif self.first_limit > 100:
-            self.second_limit = 30
-        elif self.first_limit > 50:
-            self.second_limit = 25
-        elif self.first_limit > 25:
-            self.second_limit = 15
-        else:
-            self.second_limit = 10
-
-        # Adjust third limit based on second limit
-        if self.second_limit > 100:
-            self.third_limit = 30
-        elif self.second_limit > 50:
-            self.third_limit = 20
-        elif self.second_limit > 30:
-            self.third_limit = 15
-        elif self.second_limit > 20:
-            self.third_limit = 12
-        elif self.second_limit > 14:
-            self.third_limit = 8
-        else:
-            self.third_limit = 5
-
-        print("LIMITS.................", self.first_limit, self.second_limit, self.third_limit)
-
-            
-
+    
