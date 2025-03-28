@@ -113,8 +113,8 @@ class ApiLoader:
             
     async def __execute_wp_api(self, endpoint:WP_ENDPOINT_TYPES, params=None):
 
-        wordpress_endpoints:WP_ENDPOINT_TYPES = ['posts', 'post_category', 'wp_users']
-        woocommerce_endpoints:WP_ENDPOINT_TYPES = ['products', 'product_category', 'orders', 'cart', 'wo_users']
+        wordpress_endpoints:List[WP_ENDPOINT_TYPES] = ['posts', 'post_category', 'wp_users']
+        woocommerce_endpoints:List[WP_ENDPOINT_TYPES] = ['products', 'product_category', 'orders', 'cart', 'wo_users']
 
         if endpoint in wordpress_endpoints:
             platform = 'woocommerce'
@@ -149,9 +149,11 @@ class ApiLoader:
             updated_endpoint = 'categories'
         elif endpoint == 'cart':
             updated_endpoint = 'orders'
+        elif endpoint in ['wp_users', 'wo_users']:
+            updated_endpoint = 'users'
             
         res = wcapi.get(updated_endpoint, params=formatted_params)
-        print("h......e...EE......", res.status_code, res.json())
+        print("h......e...EE......", updated_endpoint, res.status_code, res.json())
         if res.status_code == 200:
             return res
         else:
@@ -181,7 +183,10 @@ class ApiLoader:
     async def __wp_user_formatter(self, data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         return data
         
-    async def __wp_cart_formatter(self, data: List[Dict[str, Any]]) -> Dict[str, Any]:
+    async def __wp_cart_formatter(self, data: List[Dict[str, Any]]) -> Dict[str, Any]|List:
+        if not data:
+            return []
+        
         if isinstance(data, list):
             copied_data = data[0]  # Extract first item if copied_data is a list
 

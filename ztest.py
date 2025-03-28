@@ -115,17 +115,17 @@ wcapi = API(
 # r = wcapi.get("orders", params={
 #     "per_page":100,
 #     "page":1,
-#     "_fields":"status,currency,date_created,discount_total,shipping_total,total,customer_id,billing,line_items",
-#     "status":"pending,processing,on-hold,completed,cancelled,refunded,failed"
+#     "_fields":"status,currency,date_created,discount_total,shipping_total,total,customer_id,billing,line_items"
+#     # "status":"pending,processing,on-hold,completed,cancelled,refunded,failed"
 # })
 
 # FOR CART
-# r = wcapi.get("orders", params={
-#     "per_page":100,
-#     "page":1,
-#     "_fields":"total,line_items",
-#     "status":"checkout-draft"
-# })
+r = wcapi.get("orders", params={
+    "per_page":100,
+    "page":1,
+    "_fields":"total,line_items",
+    "status":"checkout-draft"
+})
 
 # FOR CATEGORIES
 # r = wcapi.get("products/categories", params={
@@ -136,14 +136,14 @@ wcapi = API(
 
 
 # FOR USERS
-wcapi = API(
-    url="http://localhost:10003",
-    consumer_key="vishal",
-    consumer_secret="TghM 5Mw5 Mniv 3ATw goXS DpWU",
-    version="wp/v2"  #Wordpress
-  )
-wcapi.is_ssl = True
-wcapi.query_string_auth = False
+# wcapi = API(
+#     url="http://localhost:10003",
+#     consumer_key="vishal",
+#     consumer_secret="TghM 5Mw5 Mniv 3ATw goXS DpWU",
+#     version="wp/v2"  #Wordpress
+#   )
+# wcapi.is_ssl = True
+# wcapi.query_string_auth = False
 
 
 # r = wcapi.get("users", params={
@@ -151,10 +151,10 @@ wcapi.query_string_auth = False
 #     "page":1, 
 # })
 
-r = wcapi.get("posts", params={
-    "per_page":1,
-    "page":1
-})
+# r = wcapi.get("posts", params={
+#     "per_page":1,
+#     "page":1
+# })
 
 print("...........", r.json())
 

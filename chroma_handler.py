@@ -194,6 +194,7 @@ class ChromaDBPopulator:
             await self._process_independent_table(vectorstore, table)
 
         print("Database extraction Done!")
+        return True
       
     async def _process_independent_table(self, vectorstore, table):
         """Process tables that do not have foreign keys."""

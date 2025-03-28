@@ -1,3 +1,4 @@
+import json
 import re
 import traceback
 import asyncio
@@ -97,12 +98,13 @@ class Rag:
                                 )
         print("CART RESPONS........", response)
         if response:
-            document = [Document(page_content=response)]
+            document = [Document(page_content=json.dumps(response))]
         else:
             document = self.empty_document
 
         retriever = DummyRetriever(filtered_docs=document)
-        return retriever
+        result = await self._retrieve_response(retriever)
+        return result
         
     async def _retrieve_response(self, retriever = None):
 
