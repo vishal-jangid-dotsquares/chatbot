@@ -19,7 +19,12 @@
                         }
                     },
                     "orders":{
-                        "fk":"OrderID"
+                        "fk":"OrderID",
+                        "child": {
+                            "customers":{
+                                "fk": "CustomerID"
+                            }
+                        }
                     }
                 }
             },

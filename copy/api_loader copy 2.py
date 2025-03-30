@@ -10,7 +10,7 @@ import initial
 load_dotenv()
 
 
-PLATFORM_TYPES=Literal['wordpress', 'shopify', 'base']
+PLATFORM_TYPES=Literal['wordpress', 'shopify']
 WP_ENDPOINT_TYPES=Literal['posts', 'post_category', 'wp_users', 'wo_users', 'products', 'product_category', 'orders', 'cart']
 
 class ApiLoader:
@@ -57,7 +57,7 @@ class ApiLoader:
         },
     }
     
-    _shopify_params = {}
+    shopify_params = {}
 
     
     def __init__(self, platform:PLATFORM_TYPES, base_url:str, vectorstore = None) -> None:
@@ -153,6 +153,7 @@ class ApiLoader:
             updated_endpoint = 'users'
             
         res = wcapi.get(updated_endpoint, params=formatted_params)
+        print("h......e...EE......", updated_endpoint, res.status_code, res.json())
         if res.status_code == 200:
             return res
         else:
@@ -412,10 +413,6 @@ class ApiLoader:
 
             elif isinstance(element, str) and element.strip():  # Normal visible text
                 extracted_text.append(element.strip())
-        
-        # trim the excessive content
-        if extracted_text and len(extracted_text):
-            extracted_text = extracted_text[:200]
          
         return " ".join(extracted_text)
         

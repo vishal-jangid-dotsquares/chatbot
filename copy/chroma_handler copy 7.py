@@ -19,7 +19,33 @@ class ChromaDBPopulator:
         """Initialize ChromaDB Populator."""
         
         self.config = initial.GET_CONFIGS('database')
-   
+                  
+    def _connect_to_database(self):
+        """Establish a connection to the database dynamically based on config."""
+        
+        db_type = self.config.get("type")
+        username = self.config.get("username", "")
+        password = self.config.get("password", "")
+        host = self.config.get("host", "")
+        port = self.config.get("port", "")
+        database = self.config.get("database", "")
+
+        if db_type == "sqlite":
+            db_url = f"sqlite:///{database}"
+        elif db_type == "postgresql":
+            db_url = f"postgresql://{username}:{password}@{host}:{port}/{database}"
+        elif db_type == "mysql":
+            db_url = f"mysql+pymysql://{username}:{password}@{host}:{port}/{database}"
+        else:
+            raise ValueError(f"Unsupported database type: {db_type}")
+
+        try:
+            engine = create_engine(db_url)
+            print(f"✅ Successfully connected to {db_type} database!")
+            return engine
+        except Exception as e:
+            raise ConnectionError(f"❌ Database connection failed: {e}")
+       
     async def populate_chroma_db(self):
         """
             Main function to populate ChromaDB with following sources
@@ -31,15 +57,12 @@ class ChromaDBPopulator:
         try:
             # Load Tables
             await self.load_tables_data()
-            await asyncio.sleep(1)
 
             # Load Documents
-            await self.load_documents_data()
-            await asyncio.sleep(1)
+            # await self.load_documents_data()
             
             # Load website content
-            await self.load_websites_content_data()
-            await asyncio.sleep(1)
+            # await self.load_websites_content_data()
 
             # Load Apis data
             await self.load_apis_data()
@@ -80,7 +103,7 @@ class ChromaDBPopulator:
             documents = [
                 Document(
                     page_content=f"Question: {qa.get('question')}\nAnswer: {qa.get('answer')}", 
-                    metadata={"division": initial.DIVISIONS["doc"], "source": document}
+                    metadata={"devision": initial.DIVISIONS["doc"], "source": document}
                 ) 
                 for qa in data
             ]
@@ -104,7 +127,7 @@ class ChromaDBPopulator:
             documents = [
                 Document(
                     page_content=chunk,
-                    metadata={"division": initial.DIVISIONS["doc"], "source": document}
+                    metadata={"devision": initial.DIVISIONS["doc"], "source": document}
                 )
                 for chunk in chunks
             ]
@@ -135,7 +158,7 @@ class ChromaDBPopulator:
             documents = [
                 Document(
                     page_content=chunk,
-                    metadata={"division": initial.DIVISIONS["doc"], "source": document}
+                    metadata={"devision": initial.DIVISIONS["doc"], "source": document}
                 )
                 for chunk in chunks
             ]
@@ -191,7 +214,7 @@ class ChromaDBPopulator:
                 Document(
                     page_content=row["text"],
                     metadata={
-                        "division": initial.DIVISIONS["db"], 
+                        "devision": initial.DIVISIONS["db"], 
                         "source": table, 
                         "tags":tag
                     }
@@ -281,7 +304,7 @@ class ChromaDBPopulator:
             Document(
                 page_content=row["text"],
                     metadata={
-                        "division": initial.DIVISIONS["db"], 
+                        "devision": initial.DIVISIONS["db"], 
                         "source": table, 
                         "tags":tag
                     }
@@ -292,33 +315,7 @@ class ChromaDBPopulator:
         if documents:
             await self.__paadd_documents(documents, vectorstore)
             print(f"✅ Added {len(documents)} merged records from '{table}' into ChromaDB!")
-                       
-    def _connect_to_database(self):
-        """Establish a connection to the database dynamically based on config."""
-        
-        db_type = self.config.get("type")
-        username = self.config.get("username", "")
-        password = self.config.get("password", "")
-        host = self.config.get("host", "")
-        port = self.config.get("port", "")
-        database = self.config.get("database", "")
-
-        if db_type == "sqlite":
-            db_url = f"sqlite:///{database}"
-        elif db_type == "postgresql":
-            db_url = f"postgresql://{username}:{password}@{host}:{port}/{database}"
-        elif db_type == "mysql":
-            db_url = f"mysql+pymysql://{username}:{password}@{host}:{port}/{database}"
-        else:
-            raise ValueError(f"Unsupported database type: {db_type}")
-
-        try:
-            engine = create_engine(db_url)
-            print(f"✅ Successfully connected to {db_type} database!")
-            return engine
-        except Exception as e:
-            raise ConnectionError(f"❌ Database connection failed: {e}")
-        
+         
        
     # Website content loader 
     async def load_websites_content_data(self):     
@@ -342,7 +339,7 @@ class ChromaDBPopulator:
                     documents.extend([
                         Document(
                             page_content=chunk,
-                            metadata={"division": initial.DIVISIONS["web"], "source": url}
+                            metadata={"devision": initial.DIVISIONS["web"], "source": url}
                         )
                         for chunk in chunks
                     ])
@@ -389,10 +386,17 @@ class ChromaDBPopulator:
         except Exception as e:
             print(f"Error while adding documents - {str(e)}")
             return None
+    
+    def __chunk_text(self, text, chunk_size=500, overlap_size=100):
+        """Chunk text with overlapping chunks."""
+        
+        chunks = []
+        for start in range(0, len(text), chunk_size - overlap_size):
+            end = min(start + chunk_size, len(text))
+            chunks.append(text[start:end])
+        return chunks
         
     def __filter_tag(self, tablename:str):
-        # Here are detecting the limited filters, but in future we can add more here
-        # e.g - shippers, sellers or any table names used by the companies
         order_pattern = initial.CHROMA_FILTER_PATTERNS['order_pattern']
         product_pattern = initial.CHROMA_FILTER_PATTERNS['product_pattern']
         product_category_pattern = initial.CHROMA_FILTER_PATTERNS['product_category_pattern']

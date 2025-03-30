@@ -1,9 +1,8 @@
 import json
 import os
-from typing import Callable, Dict, List, Literal
-from chromadb import EmbeddingFunction
+from typing import Callable, Dict, Literal
 from dotenv import load_dotenv
-import redis.asyncio as redis
+import redis
 import spacy
 from langchain.chat_models import init_chat_model
 from langchain_chroma import Chroma
@@ -18,7 +17,7 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY_9413")
 # Available models
 MODELS : Dict[
     Literal['vision','specdec',"versatile", "guard"], str
-] = {
+    ] = {
     "vision" : "llama-3.2-90b-vision-preview",
     "specdec" : "llama-3.3-70b-specdec",
     "versatile" : "llama-3.3-70b-versatile",
@@ -26,42 +25,20 @@ MODELS : Dict[
 }
 
 # Initialize the chat model
+FILTER_MODEL = init_chat_model(
+    MODELS['guard'],
+    model_provider="groq",
+    api_key=GROQ_API_KEY,
+)
 BASE_MODEL = init_chat_model(
     MODELS['vision'],
     model_provider="groq",
     api_key=GROQ_API_KEY,
 )
 
-FILTER_MODEL = init_chat_model(
-    MODELS['guard'],
-    model_provider="groq",
-    api_key=GROQ_API_KEY,
-)
-
-SUMMERIZING_MODEL = init_chat_model(
-    MODELS['guard'],
-    model_provider="groq",
-    api_key=GROQ_API_KEY,
-)
-
-
 # Initialising embedding function
-model_name = "sentence-transformers/all-mpnet-base-v2"
-model_kwargs = {
-    "device": "cpu",  # Force CPU usage
-    "trust_remote_code": True  # If using custom transformers from Hugging Face
-}
-encode_kwargs = {
-    "batch_size": 8,  # Reduce batch size to avoid high RAM usage
-    "normalize_embeddings": True,  # Normalize for better cosine similarity search
-}
-
-EMBEDDING_FUNCTION = HuggingFaceEmbeddings(
-    model_name=model_name,
-    model_kwargs=model_kwargs,
-    encode_kwargs=encode_kwargs
-)
-EMBEDDING_FUNCTION.show_progress = True
+EMBEDDING_FUNCTION = HuggingFaceEmbeddings()
+EMBEDDING_FUNCTION.show_progress =True
 
 
 # Load the existing config file and vector database
@@ -91,14 +68,14 @@ PLATFORM_NAME: Literal['wordpress', 'shopify', 'base'] = 'wordpress'
 def VECTOR_STORE(directory_name:str) -> Callable[[str], Chroma]:
     vectorstore:Chroma = Chroma(
         persist_directory=directory_name, 
-        embedding_function=EMBEDDING_FUNCTION,
-        collection_metadata={"hnsw:space": "cosine"}
+        embedding_function=EMBEDDING_FUNCTION
     )
     
     def set_collection(collection_name:str)->Chroma:
         vectorstore._chroma_collection = vectorstore._client.get_or_create_collection(
             name=collection_name,
-            metadata={"hnsw:space": "cosine"}
+            embedding_function=None,
+            metadata=None,
         )
         return vectorstore
     
@@ -130,46 +107,40 @@ FILTERING_MINIMUM_SCORE : dict[
 }
 
 # Define the prompt template
-PRE_PROMPTS:Dict[Literal['memory', 'system', 'division'], str] = {
-    'memory': """
-        Summarize the following conversation in **no more than 200 words** while keeping the key details
-        \n\n{input_text}\n\n"
-        Your summary must be clear, concise, and not exceed the word limit."
-    """,
+PRE_PROMPTS:Dict[Literal['system', 'division'], str] = {
     'system': """
-        ### AI Chatbot Assistant for {company}  
-        *Managed by Vishal*  
+        You are an AI chatbot assistant for {company}, created and managed by Vishal.
+        🔹 Language: Always respond in English.
+        🔹 Format: Provide answers in a structured, human-readable format, keeping responses short, engaging, and under 100 words.
+        🔹 Enhancement: Use icons for clarity, making the conversation more engaging and emotionally aware.
 
-        - **Language:** Always respond in English.  
-        - **Format:** Keep answers structured, engaging, and under 100 words. Use icons for clarity if needed.  
-        - **Product & Content Queries:** Suggest relevant options from provided data or given past conversation. If a link exists, include it.  
-        - For personal orders, use only **documented details with user/customer ID** (⚠ Never reveal IDs).  
+        🛍 Product & Content Queries
+        If the user asks about a product, post, or category, suggest options from the given context or past conversations.
+        Example: "Suggest me the best [item name] you have."
+        If a relevant link exists, always include it in the response.
 
-        ### **Follow-Up Handling**  
-        - Check if the new question follows the last; if not, reset context.  
-        - Example:  
-        - **User:** "Show me the latest laptops."  
-        - **User (Follow-Up):** "Which has the best battery?"  
-        - **Bot:** "The [Model] has the best battery. [Link]"  
+        🧠 Understanding & Handling User Emotions
+        Identify emotions based on user input (e.g., excitement, frustration, curiosity).
+        Respond accordingly:
+        Excited User: 🎉 "Great choice! Here’s the best option for you..."
+        Confused User: 🤔 "No worries! Let me simplify this for you..."
+        Frustrated User: 🙏 "I’m here to help! Let’s find the best solution together..."
+        Casual Inquiry: 😊 "Sure! Here’s what I found for you..."
 
-        ### **Understanding User Emotions**  
-        Respond accordingly:  
-        - 🎉 Excited: "Great choice! Here’s the best option..."  
-        - 🤔 Confused: "No worries! Let me simplify..."  
-        - 🙏 Frustrated: "I’m here to help! Let’s find a solution..."  
+        🚫 No Valid Answer?
+        If no valid result is found, politely respond:
+        "I couldn’t find any valid results. Could you please try a different query? I’ll do my best to assist!"
+        Never generate responses beyond the given context or previous conversations (except for greetings or introductions).
 
-        ### **No Valid Answer?**  
-        - Reply: "I couldn’t find a match. Try a different query!"  
-        - Never generate responses beyond the given context or previous conversations (except for greetings or introductions).  
-
-        ### **Guidelines**  
+        🎯 Key Guidelines
         ✔ Search & prioritize results based on user intent and emotions.
         ✔ Answer only what is asked, avoiding unnecessary details.
         ✔ Do not disclose extra information unless the user explicitly asks.
 
-        **New Query:** {current_question}  
-        **Previous (if any):** {last_question}  
-        **History:** {history}  
+        📝 New User Query:
+        🔹 {user_query}
+        📜 Conversation History:
+        🔹 {history}
     """,
     'division': """
         You are an AI assistant that classifies user queries into one of three categories based on intent, context, and emotion.  
@@ -311,11 +282,3 @@ CHROMA_FILTER_PATTERNS: Dict[
     "product_category_pattern" : r'\b(categor(?:y|ies)|products?(?:types?|categor(?:y|ies))|categor(?:y|ies)details?)\b'
 }
 
-FOLLOW_UP_PATTERN:List = [
-    r"\b(next|others|anymore|continues?|another|else|extend|last|previous|next|go|go ahead)\b",  # Single-word implicit follow-ups
-    r"\b((?:what|how) about|(?:any|any others?|anything|something)\s*(?:alternatives?|else))\b",  # Comparative follow-ups
-    r"\b((?:tell|shows?|gives?|lists?|explains?)\s*(:?me|me in|it in|it|in)?\s*(?:deep|more))\b",  # Requesting more details
-    r"\b((?:ok|yes)?\s?(?:extend|shows?|gives?|lists?|explains?) it|expand on that|continue with more)\b",  # Requesting more details
-    r"\b(and\?|go on|keep going|can you continue|any suggestions|what else|any others?)\b",  # Implicit contextual follow-ups
-    r"\b(do you have other|show me different|what else do you offer|similar products?|alternative brands?)\b"
-]
