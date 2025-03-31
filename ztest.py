@@ -96,26 +96,26 @@ from woocommerce import API
 import initial
 
 wcapi = API(
-    url="http://localhost:10003",
-    consumer_key="ck_6dda33be2f01d1dba75e839107643f820d284804",
-    consumer_secret="cs_b6eae529204d1b8bdf34f615a693f3b8bbf048f9",
+    url="https://sident.24livehost.com",
+    consumer_key="ck_4c25c31650af6f4217a3d8169fdda5c5994472d4",
+    consumer_secret="cs_6cbadd241666701167f3c58329b636d32d753d8e",
     version="wc/v3"   #Woocommerce
     # version="wp/v2"  #Wordpress
   )
 
 # FOR PRODUCTS
 # r = wcapi.get("products", params={
-#     "per_page":100,
+#     "per_page":1,
 #     "page":1,
 #     "_fields":"slug,permalink,description,price,sale_price,on_sale,average_rating,categories,tags,stock_status",
-#     # "parent":"0", #for fetching only parents
-#     "include":"1,2,155"  #for fetching parent variations
+#     "parent":"0", #for fetching only parents
+#     # "include":"1,2,155"  #for fetching parent variations
 # })
 
 
 # FOR ORDERS
 # r = wcapi.get("orders", params={
-#     "per_page":100,
+#     "per_page":1,
 #     "page":1,
 #     "_fields":"status,currency,date_created,discount_total,shipping_total,total,customer_id,billing,line_items"
 #     # "status":"pending,processing,on-hold,completed,cancelled,refunded,failed"
@@ -125,21 +125,21 @@ wcapi = API(
 # r = wcapi.get("orders", params={
 #     "per_page":100,
 #     "page":1,
-#     "_fields":"total,line_items",
-#     "status":"checkout-draft"
+#     "_fields":"status, total,line_items",
+#     # "status":"checkout-draft"
 # })
 
 # FOR CATEGORIES
-# r = wcapi.get("products/categories", params={
-#     "per_page":100,
-#     "page":1,
-#     "_fields":"name,description",
-# })
+r = wcapi.get("products/categories", params={
+    "per_page":100,
+    "page":1,
+    "_fields":"name,description",
+})
 
 
 # FOR USERS
 # wcapi = API(
-#     url="http://localhost:10003",
+#     url="https://sident.24livehost.com",
 #     consumer_key="vishal",
 #     consumer_secret="TghM 5Mw5 Mniv 3ATw goXS DpWU",
 #     version="wp/v2"  #Wordpress
@@ -147,6 +147,11 @@ wcapi = API(
 # wcapi.is_ssl = True
 # wcapi.query_string_auth = False
 
+
+# r = wcapi.get("pages", params={
+#     "per_page":100,
+#     "page":1, 
+# })
 
 # r = wcapi.get("users", params={
 #     "per_page":100,
@@ -158,7 +163,7 @@ wcapi = API(
 #     "page":1
 # })
 
-# print("...........", r.json())
+print("...........", r.json())
 
 
 
@@ -278,35 +283,35 @@ wcapi = API(
 
 
 # LLM BASE CHECKER
-import time
-from langchain_groq import ChatGroq
-from langchain.schema import HumanMessage
+# import time
+# from langchain_groq import ChatGroq
+# from langchain.schema import HumanMessage
 
 # Define Groq API Key and Model
 
 
-def detect_follow_up(prev_query, current_query):
-    """Detects if the current query is a follow-up to the previous one."""
-    prompt = f"Determine if the second query is a follow-up to the first.\n\nPrevious: {prev_query}\nCurrent: {current_query}\nAnswer with 'yes' or 'no'."
+# def detect_follow_up(prev_query, current_query):
+#     """Detects if the current query is a follow-up to the previous one."""
+#     prompt = f"Determine if the second query is a follow-up to the first.\n\nPrevious: {prev_query}\nCurrent: {current_query}\nAnswer with 'yes' or 'no'."
     
-    start_time = time.time()
-    response = initial.MODELS['small'].invoke([HumanMessage(content=prompt)])
-    end_time = time.time()
+#     start_time = time.time()
+#     response = initial.MODELS['small'].invoke([HumanMessage(content=prompt)])
+#     end_time = time.time()
 
-    answer = response.content.strip().lower()
-    is_follow_up = "yes" in answer
+#     answer = response.content.strip().lower()
+#     is_follow_up = "yes" in answer
     
-    return is_follow_up, round(end_time - start_time, 3)
+#     return is_follow_up, round(end_time - start_time, 3)
 
-# User input loop
-while True:
-    prev_query = input("Previous Query: ")
-    current_query = input("Current Query: ")
+# # User input loop
+# while True:
+#     prev_query = input("Previous Query: ")
+#     current_query = input("Current Query: ")
     
-    if prev_query.lower() == "exit" or current_query.lower() == "exit":
-        break
+#     if prev_query.lower() == "exit" or current_query.lower() == "exit":
+#         break
 
-    is_follow_up, exec_time = detect_follow_up(prev_query, current_query)
-    print(f"Follow-up Detected: {is_follow_up}")
-    print(f"Execution Time: {exec_time} seconds\n")
+#     is_follow_up, exec_time = detect_follow_up(prev_query, current_query)
+#     print(f"Follow-up Detected: {is_follow_up}")
+#     print(f"Execution Time: {exec_time} seconds\n")
 

@@ -30,16 +30,16 @@ class ChromaDBPopulator:
 
         try:
             # Load Tables
-            await self.load_tables_data()
-            await asyncio.sleep(1)
+            # await self.load_tables_data()
+            # await asyncio.sleep(1)
 
             # Load Documents
-            await self.load_documents_data()
-            await asyncio.sleep(1)
+            # await self.load_documents_data()
+            # await asyncio.sleep(1)
             
             # Load website content
-            await self.load_websites_content_data()
-            await asyncio.sleep(1)
+            # await self.load_websites_content_data()
+            # await asyncio.sleep(1)
 
             # Load Apis data
             await self.load_apis_data()
@@ -341,7 +341,7 @@ class ChromaDBPopulator:
                     
                     documents.extend([
                         Document(
-                            page_content=chunk,
+                            page_content = chunk,
                             metadata={"division": initial.DIVISIONS["web"], "source": url}
                         )
                         for chunk in chunks
@@ -357,12 +357,12 @@ class ChromaDBPopulator:
 
     # Apis data loader
     async def load_apis_data(self):
-        base_url = 'http://localhost:10003/'
+        base_url = 'https://sident.24livehost.com/'
         vectorstore = initial.VECTOR_DB['database'](initial.COLLECTION_NAME)
 
         loader = ApiLoader('wordpress' ,base_url, vectorstore)
-        await loader.wp_data_loader(['post_category', 'posts', 'product_category', 'products', 'orders'])
-        # cart_data = await api_loader._call_wp_api('cart', {'customer':"1"})
+        # await loader.wp_data_loader(['post_category', 'posts', 'product_category', 'products', 'orders'])
+        await loader.wp_data_loader(['product_category', 'products', 'orders'])
         
     
     # Helper functions

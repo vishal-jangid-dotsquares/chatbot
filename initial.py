@@ -47,7 +47,8 @@ def initialise_model(model:Literal[
     )
 
 MODELS : Dict[
-    Literal['vision','specdec',"versatile", "small"], BaseChatModel
+    Literal['vision','specdec',"versatile", "small"], 
+    BaseChatModel
 ] = {
     "vision" : initialise_model('vision'),
     # "specdec" : initialise_model('specdec'),
@@ -98,7 +99,7 @@ def VECTOR_STORE(directory_name:str) -> Callable[[str], Chroma]:
 VECTOR_DB: Dict[
     Literal['document', 'website', 'database'], 
     Callable[[str], Chroma]
-    ] = {
+] = {
     'document': VECTOR_STORE('chroma_db_directory/document_vector_db'),
     'website': VECTOR_STORE('chroma_db_directory/website_vector_db'),
     'database': VECTOR_STORE('chroma_db_directory/database_vector_db'),
@@ -143,7 +144,37 @@ FILTERING_MINIMUM_SCORE : dict[
 }
 
 # Define the prompt template
-PRE_PROMPTS:Dict[Literal['memory', 'system', 'division'], str] = {
+PRE_PROMPTS:Dict[
+    Literal['followUp', 'memory', 'system', 'division'], str
+] = {
+    'followUp':"""
+        You are an AI system designed to determine whether a new user query is a **strict follow-up** to a previous query.
+
+        ### **Strict Definition of a Follow-up Query**
+        A query is a follow-up **ONLY IF** it meets **ALL** of these conditions:
+        1. **It explicitly references something mentioned in the previous query.**
+        2. **It cannot be answered meaningfully without first knowing the previous query.**
+        3. **It directly depends on details or context provided in the previous query.**
+        4. **If the new query is asked alone, it would be unclear or incomplete.**
+
+        ### **Strict Rejection Criteria**
+        A query is **NOT** a follow-up if:
+        - It introduces a **new topic or request** that was not explicitly stated in the previous query.
+        - It **can be understood and answered independently** without needing the previous query.
+        - It refers to **a specific entity (e.g., "VITA") that is not explicitly mentioned** in the previous query.
+        - It is **only loosely related but does not depend on** the previous query.
+
+        ---
+        **Previous Query:** "{prev_query}"  
+        **New Query:** "{current_query}"  
+        ---
+
+        ### **Instructions**
+        - **ONLY respond with "yes" or "no".**  
+        - **Do NOT assume** a follow-up if there is any ambiguity. If unsure, default to **"no"**.  
+        - **If the new query can be fully understood on its own, respond with "no"** even if the topics are similar.  
+
+    """,
     'memory': """
         Summarize the following conversation in **no more than 300 words** while keeping key details and maintaining clarity. 
 
@@ -159,6 +190,7 @@ PRE_PROMPTS:Dict[Literal['memory', 'system', 'division'], str] = {
         {input_text}
 
         Generate an updated summary while ensuring coherence and readability.
+        Only give the summarise conversation don't explain anything related to the process.
     """,
     'system': """
         ### AI Chatbot Assistant for {company}  
@@ -290,13 +322,13 @@ FALLBACK_MESSAGE = 'Sorry, i am unable to find any valid results. Please, try wi
 # Keyword extractor patterns
 USER_PATTERN: Dict[
     Literal[
-        'digit_pattern', 
+        'self_reffering_pattern', 
         'entity_pattern', 
         'exclued_pattern'
         ], str
     ] = {
-    "digit_pattern" : r'(\d|my)',
-    "entity_pattern" : r'(orde?(?:rs?|re?d)|p(?:e|u)rcha?ses?d?|buy|bought|carts?|products?|cancelled)',
+    "self_reffering_pattern" : r'\b(my|my last|give me my)',
+    "entity_pattern" : r'(orde?(?:rs?|re?d)|p(?:e|u)rcha?ses?d?|placed?|buy|bought|carts?|cancelled)',
     "exclued_pattern" : r'(cancel)'
 }
 
@@ -313,16 +345,14 @@ FILTER_TAG_PATTERNS: Dict[
         'cart_pattern', 
         'order_pattern', 
         'product_pattern',
-        'helper_category_pattern', 
-        'continue_pattern'
+        'helper_category_pattern'
         ], str
     ] = {
     'post_pattern': r'\b(posts?|(?:b|v)log(?:s?|ings?)|articles?|authors)\b',
     'cart_pattern': r'\b(carts?|buckets?|saved? (?:items?|product?))\b',
     "order_pattern" : r'\b(orde?(?:rs?|re?d)|p(?:e|u)rcha?ses?d?|buy|bought)\b',
-    "product_pattern" : r'\b(products?|items?)\b',
-    "helper_category_pattern" : r'\b(t(?:y|i)pes?|v(?:e|a)r(?:i|ei|ie)t(?:y|i|is|ies?|eis?)|c(?:e|a)t(?:e|i|ie|ei)g(?:a|o)r(?:y|i|e|ee|eis?|ies?)|kinds?)\b',
-    "continue_pattern" : r'\b(continues?|more|last|previous|next|go|go ahe?a?d)\b'
+    "product_pattern" : r'\b((?:products?|items?)\s*(?:under|c(?:e|a)t(?:e|i|ie|ei)g(?:a|o)r(?:y|i|e|ee|eis?|ies?)))\b',
+    "helper_category_pattern" : r'\b(t(?:y|i)pes?|v(?:e|a)r(?:i|ei|ie)t(?:y|i|is|ies?|eis?)|c(?:e|a)t(?:e|i|ie|ei)g(?:a|o)r(?:y|i|e|ee|eis?|ies?)|kinds?|catalogs?|catalouges?)\b'
 }
 
 CHROMA_FILTER_PATTERNS: Dict[

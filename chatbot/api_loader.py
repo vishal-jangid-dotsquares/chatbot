@@ -68,8 +68,7 @@ class ApiLoader:
     async def wp_data_loader(self, endpoints:List[WP_ENDPOINT_TYPES])->None:   
         tasks = [self._fetch_wp_data(endpoint) for endpoint in endpoints]
         await asyncio.gather(*tasks)
-       
-        print(f"Successfully fetched all the api endpoints: {endpoints}")
+    
     
     async def shopify_loader(self):
         pass 
@@ -96,6 +95,8 @@ class ApiLoader:
                 params | {'page':page_count}
             )
             response_data.extend(response)
+        if response_data:
+            print(f"Successfully fetched the api endpoint: {endpoint}")
         return response_data
 
     async def _call_wp_api(self, endpoint:WP_ENDPOINT_TYPES, params=None, populate=True):
@@ -112,53 +113,55 @@ class ApiLoader:
         return formatted_data
             
     async def __execute_wp_api(self, endpoint:WP_ENDPOINT_TYPES, params=None):
+        try:
+            wordpress_endpoints:List[WP_ENDPOINT_TYPES] = ['posts', 'post_category', 'wp_users']
+            woocommerce_endpoints:List[WP_ENDPOINT_TYPES] = ['products', 'product_category', 'orders', 'cart', 'wo_users']
 
-        wordpress_endpoints:List[WP_ENDPOINT_TYPES] = ['posts', 'post_category', 'wp_users']
-        woocommerce_endpoints:List[WP_ENDPOINT_TYPES] = ['products', 'product_category', 'orders', 'cart', 'wo_users']
+            if endpoint in wordpress_endpoints:
+                platform = 'woocommerce'
+                wp_api_version = "wp/v2" 
+                key=os.getenv('WORDPRESS_USERNAME')
+                secret=os.getenv('WORDPRESS_PASSWORD')
+            else:
+                platform = 'wordpress'
+                wp_api_version = "wc/v3"
+                key=os.getenv('WOOCOMMERCE_CONSUMER_KEY')
+                secret=os.getenv('WOOCOMMERCE_CONSUMER_SECRET')
 
-        if endpoint in wordpress_endpoints:
-            platform = 'woocommerce'
-            wp_api_version = "wp/v2" 
-            key=os.getenv('WOOCOMMERCE_CONSUMER_KEY')
-            secret=os.getenv('WOOCOMMERCE_CONSUMER_SECRET')
-        else:
-            platform = 'wordpress'
-            wp_api_version = "wc/v3"
-            key=os.getenv('WORDPRESS_USERNAME')
-            secret=os.getenv('WORDPRESS_PASSWORD')
-
+                
+            wcapi = WordpressApi(
+                url=self.base_url,
+                consumer_key=key,
+                consumer_secret=secret,
+                version=wp_api_version  
+            )
+            if platform == 'wordpress':
+                wcapi.is_ssl = True
+                wcapi.query_string_auth = False
+                
+            # params
+            formatted_params = self._wp_params[endpoint] | (params or {})
             
-        wcapi = WordpressApi(
-            url=self.base_url,
-            consumer_key=key,
-            consumer_secret=secret,
-            version=wp_api_version  
-        )
-        if platform == 'wordpress':
-            wcapi.is_ssl = True
-            wcapi.query_string_auth = False
-            
-        # params
-        formatted_params = self._wp_params[endpoint] | (params or {})
-        
-        # endpoint
-        updated_endpoint = endpoint
-        if endpoint == 'product_category': 
-            updated_endpoint = 'products/categories'
-        elif endpoint == 'post_category': 
-            updated_endpoint = 'categories'
-        elif endpoint == 'cart':
-            updated_endpoint = 'orders'
-        elif endpoint in ['wp_users', 'wo_users']:
-            updated_endpoint = 'users'
-            
-        res = wcapi.get(updated_endpoint, params=formatted_params)
-        if res.status_code == 200:
-            return res
-        else:
-            print(f"Unable to fetch data - endpoint:{endpoint} - {res.json()}")
+            # endpoint
+            updated_endpoint = endpoint
+            if endpoint == 'product_category': 
+                updated_endpoint = 'products/categories'
+            elif endpoint == 'post_category': 
+                updated_endpoint = 'categories'
+            elif endpoint == 'cart':
+                updated_endpoint = 'orders'
+            elif endpoint in ['wp_users', 'wo_users']:
+                updated_endpoint = 'users'
+                
+            res = wcapi.get(updated_endpoint, params=formatted_params)
+            if res.status_code == 200:
+                return res
+            else:
+                print(f"Unable to fetch data - endpoint:{endpoint} - {res.json()}")
+                return None
+        except Exception as e:
+            print(f"Unable to fetch the data for endpoint: {endpoint} - {str(e)}")
             return None
-          
           
     async def __wp_data_formatter(self, endpoint:WP_ENDPOINT_TYPES, data:List[Dict[str, Any]]):
         
