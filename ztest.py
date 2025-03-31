@@ -93,6 +93,8 @@
 
 from woocommerce import API
 
+import initial
+
 wcapi = API(
     url="http://localhost:10003",
     consumer_key="ck_6dda33be2f01d1dba75e839107643f820d284804",
@@ -120,12 +122,12 @@ wcapi = API(
 # })
 
 # FOR CART
-r = wcapi.get("orders", params={
-    "per_page":100,
-    "page":1,
-    "_fields":"total,line_items",
-    "status":"checkout-draft"
-})
+# r = wcapi.get("orders", params={
+#     "per_page":100,
+#     "page":1,
+#     "_fields":"total,line_items",
+#     "status":"checkout-draft"
+# })
 
 # FOR CATEGORIES
 # r = wcapi.get("products/categories", params={
@@ -156,5 +158,155 @@ r = wcapi.get("orders", params={
 #     "page":1
 # })
 
-print("...........", r.json())
+# print("...........", r.json())
+
+
+
+# EMBEDDING BASE SIMILARITY CHECKER
+# import spacy
+
+# # Load the English NLP model
+# nlp = initial.NLP_PROCESSOR
+
+# import spacy
+# from sentence_transformers import SentenceTransformer, util
+# from sklearn.metrics.pairwise import cosine_similarity
+
+# # Load NLP model for Coreference Resolution
+# nlp = spacy.load("en_core_web_sm")
+
+# # Load Sentence Transformer Model for Semantic Similarity
+# model = SentenceTransformer("all-MiniLM-L6-v2")
+
+# def ngram_overlap(prev_query, curr_query, n=2):
+#     """Calculate N-gram overlap (bigram/trigram similarity)"""
+#     prev_ngrams = set(zip(*[prev_query.split()[i:] for i in range(n)]))
+#     curr_ngrams = set(zip(*[curr_query.split()[i:] for i in range(n)]))
+    
+#     intersection = prev_ngrams.intersection(curr_ngrams)
+#     union = prev_ngrams.union(curr_ngrams)
+    
+#     return len(intersection) / len(union) if union else 0
+
+# def calculate_similarity(prev_query, curr_query, cosine_threshold=0.4, ngram_threshold=0.2):
+#     """Check if the current query is a follow-up of the previous one."""
+    
+#     # Cosine similarity
+#     prev_embedding = model.encode(prev_query, convert_to_tensor=True)
+#     curr_embedding = model.encode(curr_query, convert_to_tensor=True)
+#     cosine_sim = util.pytorch_cos_sim(prev_embedding, curr_embedding).item()
+
+#     # N-gram similarity (bigram)
+#     bigram_sim = ngram_overlap(prev_query, curr_query, n=2)
+
+#     # Print scores
+#     print(f"SIMILARITY SCORE Cosine: {cosine_sim:.4f}")
+#     print(f"SIMILARITY SCORE N-Gram (Bigram): {bigram_sim:.4f}")
+
+#     # If either similarity metric is high, it's a follow-up
+#     if cosine_sim > cosine_threshold or bigram_sim > ngram_threshold:
+#         return True
+
+
+# def is_followup(prev_query, new_query):
+#     """
+#     Detect if the new query is a follow-up statement.
+#     Combines:
+#     1. Semantic similarity (cosine similarity)
+#     2. Coreference resolution (pronouns like "it", "that")
+#     3. Heuristic rule (keywords like "what about", "how about")
+#     """
+#     if not prev_query:  # If no previous query, it cannot be a follow-up
+#         return False
+
+#     if calculate_similarity(prev_query, new_query):
+#         print("calculate_similarity::::::: ", True)
+#     print("Regex...........")
+#     print(any(new_query for pattern in initial.FOLLOW_UP_PATTERN if pattern.search(new_query)))
+
+
+# Interactive chatbot loop
+# previous_query = None
+
+# print("\n🤖 Chatbot Follow-Up Detector (Type 'exit' to stop)\n")
+
+# while True:
+#     previous_query = input("previous: ").strip()
+#     user_query = input("current: ").strip()
+
+#     if user_query.lower() == "exit":
+#         print("\n👋 Exiting chatbot. Goodbye!\n")
+#         break
+#     is_followup(previous_query, user_query)
+
+
+
+# NLP BASE CHECKER
+# def extract_useful_nouns(text):
+#     """Extracts useful nouns from a sentence while filtering out generic ones."""
+#     doc = nlp(text)
+#     useful_nouns = set()
+
+#     # for token in doc:
+#         # Check if token is a noun or proper noun and not in the excluded list
+#         # if token.pos_ in {"NOUN", "PROPN"}:
+            
+#         #     useful_nouns.add(token.text)
+
+#     for token in doc:
+#       print(f"Token: {token.text}")
+#       print(f"  Lemma: {token.lemma_}")
+#       print(f"  POS: {token.pos_}")
+#       print(f"  Detailed POS Tag: {token.tag_}")
+#       print(f"  Dependency: {token.dep_}")
+#       print(f"  Named Entity Type: {token.ent_type_}")
+#       print(f"  Stopword: {token.is_stop}")
+#       print(f"  Is Alpha: {token.is_alpha}")
+#       print(f"  Is Numeric: {token.is_digit}")
+#       print(f"  Shape: {token.shape_}")
+#       print("-" * 40)
+
+
+# while(True):
+    
+#     user_query = input("current: ").strip()
+
+#     if user_query.lower() == "exit":
+#         print("\n👋 Exiting chatbot. Goodbye!\n")
+#         break
+#     extract_useful_nouns(user_query)
+
+
+# LLM BASE CHECKER
+import time
+from langchain_groq import ChatGroq
+from langchain.schema import HumanMessage
+
+# Define Groq API Key and Model
+
+
+def detect_follow_up(prev_query, current_query):
+    """Detects if the current query is a follow-up to the previous one."""
+    prompt = f"Determine if the second query is a follow-up to the first.\n\nPrevious: {prev_query}\nCurrent: {current_query}\nAnswer with 'yes' or 'no'."
+    
+    start_time = time.time()
+    response = initial.MODELS['small'].invoke([HumanMessage(content=prompt)])
+    end_time = time.time()
+
+    answer = response.content.strip().lower()
+    is_follow_up = "yes" in answer
+    
+    return is_follow_up, round(end_time - start_time, 3)
+
+# User input loop
+while True:
+    prev_query = input("Previous Query: ")
+    current_query = input("Current Query: ")
+    
+    if prev_query.lower() == "exit" or current_query.lower() == "exit":
+        break
+
+    is_follow_up, exec_time = detect_follow_up(prev_query, current_query)
+    print(f"Follow-up Detected: {is_follow_up}")
+    print(f"Execution Time: {exec_time} seconds\n")
 

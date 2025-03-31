@@ -62,16 +62,16 @@ class CustomChatMemory:
         await self.redis_client.set(self.user_summary_key, new_summary, ex=self.expiry)
 
     async def summarize_text(self, old_summary: str, new_chat: str):
-        """Summarize given conversations using LangChain with a strict 300-word limit."""
+        """Summarize given conversations using LangChain with a strict 200-word limit."""
         chain = load_summarize_chain(
-            initial.MODELS['small'], 
+            initial.SUMMERIZING_MODEL, 
             chain_type="stuff",
         )
         
         # Combine old summary with new chat history
+        combined_text = f"{old_summary} {new_chat}".strip()
         prompt = initial.PRE_PROMPTS['memory'].format(
-            old_summary=old_summary,
-            input_text = new_chat
+            input_text = combined_text
         )
         
         docs = [Document(page_content=prompt)]

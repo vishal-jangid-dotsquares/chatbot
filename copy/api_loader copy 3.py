@@ -270,18 +270,14 @@ class ApiLoader:
         
         for post in data:
             author_id = post.get("author") 
-            user_response = await self.__execute_wp_api('wp_users', {'indclude':str(author_id)})
-
-            category_ids = post.get("categories") 
-            category_response = await self.__execute_wp_api('post_category', {'categories':str(category_ids)})
+            response = await self.__execute_wp_api('wp_users', {'indclude':str(author_id)})
 
             formatted_posts.append({
                 "date": post.get("date"),
                 "link": post.get("link"),
                 "title": post.get("title", {}).get("rendered", ""),
                 "content": self.__clean_content(post.get("content", {}).get("rendered", "")),
-                "author": user_response.json()[0] if user_response else author_id,
-                "categories": category_response
+                "author": response.json()[0] if response else author_id,
             })
         
         return formatted_posts

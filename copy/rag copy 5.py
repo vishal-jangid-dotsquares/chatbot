@@ -32,7 +32,7 @@ class Rag:
     filter_tag:Optional[str] = None
     is_followUp:bool = False
     pre_prompt_message:str = ""
-    first_limit:int = 400
+    first_limit:int = 500
     second_limit:int = 50
     third_limit:int = 15
     empty_document = [
@@ -106,7 +106,7 @@ class Rag:
 
         # Create a RetrievalQA Chain
         qa_chain = RetrievalQA.from_chain_type(
-            llm=initial.MODELS['vision'], 
+            llm=initial.BASE_MODEL, 
             chain_type="stuff", 
             retriever=retriever,
             return_source_documents=True,
@@ -149,7 +149,6 @@ class Rag:
         if self.is_followUp:
             division = await self.memory.get_last_division()
             last_question = await self.memory.get_last_message()
-            print("LAST...............", division, last_question, division and last_question)
             if division and last_question:
                 self.message = last_question
                 retriever = await self._get_retriever(division)
@@ -178,7 +177,6 @@ class Rag:
                 division = 'website'
                 retriever = merged_retrievers[2]
         
-        await self.memory.add_division(division)
         return division, retriever
 
     async def __refine_retriever(self, division:DIVISION_TYPE, retriever):     
@@ -202,13 +200,7 @@ class Rag:
 
     async def _get_retriever(self, division: DIVISION_TYPE):
         vector_store = initial.VECTOR_DB[division](initial.COLLECTION_NAME)   
-        if division != 'database':
-            self.first_limit -= 200
-        search_kwargs= {
-            'k':self.first_limit * 0.2, 
-            'fetch_k' : self.first_limit, 
-            "lambda_mult": 0.8
-        }
+        search_kwargs= {'k':self.first_limit * 0.25, 'fetch_k' : self.first_limit, "lambda_mult": 0.8}
 
         # filtering with tags
         filter_tag = None
@@ -225,10 +217,9 @@ class Rag:
         return retriever
              
     async def _re_filter_retriever(self, merged_docs):
-        print("MERGED DOCS..........", merged_docs)
         temp_vector_store = Chroma.from_documents(merged_docs, initial.EMBEDDING_FUNCTION)  
         temp_retriever = temp_vector_store.as_retriever(
-            search_type="similarity", 
+            search_type="mmr", 
             search_kwargs= {'k':self.third_limit}
         )
         refined_results = temp_retriever.invoke(self.message)
@@ -272,31 +263,31 @@ class Rag:
         return self.empty_document
  
     def _smart_word_filter(self, division: DIVISION_TYPE, content_list):
-        # query = self.input.message
-        # exclude_filter_tags = ['product_category_tag', 'post_category_tag']
-        # if division == 'database':
-        #     if (
-        #         (self.is_userId_attached and self.userId)
-        #         or
-        #         (self.filter_tag in exclude_filter_tags)
-        #     ):
-        #         return content_list
+        query = self.input.message
+        exclude_filter_tags = ['product_category_tag', 'post_category_tag']
+        if division == 'database':
+            if (
+                (self.is_userId_attached and self.userId)
+                or
+                (self.filter_tag in exclude_filter_tags)
+            ):
+                return content_list
             
-        #     entities = self.__entity_extractor() or query
-        #     print("ENTITIES...............", entities)
+            entities = self.__entity_extractor() or query
+            print("ENTITIES...............", entities)
 
-        # if content_list:
-        #     # FuzzProcess.extract_iter **use it when you have large dataset**
-        #     matches = FuzzProcess.extract(
-        #         query, 
-        #         content_list, 
-        #         limit=self.second_limit,
-        #         scorer=fuzz.partial_ratio, 
-        #         score_cutoff=initial.FILTERING_MINIMUM_SCORE[division], 
-        #         score_hint=70
-        #     )
-        #     print("MATCHES..................", matches)
-        #     return list(map(lambda x: x[0], matches))
+        if content_list:
+            # FuzzProcess.extract_iter **use it when you have large dataset**
+            matches = FuzzProcess.extract(
+                query, 
+                content_list, 
+                limit=self.second_limit,
+                scorer=fuzz.partial_ratio, 
+                score_cutoff=initial.FILTERING_MINIMUM_SCORE[division], 
+                score_hint=70
+            )
+            print("MATCHES..................", matches)
+            return list(map(lambda x: x[0], matches))
         
         return content_list
 
@@ -407,7 +398,7 @@ class Rag:
             user_query = self.message,
         )
         
-        llm = initial.MODELS['vision']
+        llm = initial.BASE_MODEL
         response = llm.predict_messages([
             SystemMessage(content=system_prompt),
             HumanMessage(content=self.message)
@@ -447,8 +438,10 @@ class Rag:
             self.third_limit = 15
         elif self.second_limit > 20:
             self.third_limit = 10
-        else:
+        elif self.second_limit > 10:
             self.third_limit = 5
+        else:
+            self.third_limit = 3
 
     def __is_followUp_question(self):
         return any(re.search(pattern, self.input.message, re.IGNORECASE) for pattern in initial.FOLLOW_UP_PATTERN)

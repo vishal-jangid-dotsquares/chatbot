@@ -1,63 +1,50 @@
 import json
 import os
-import re
 from typing import Callable, Dict, List, Literal
+from chromadb import EmbeddingFunction
 from dotenv import load_dotenv
 import redis.asyncio as redis
 import spacy
 from langchain.chat_models import init_chat_model
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_core.language_models import BaseChatModel
 
-
-# ** THIRD PARTY RELATED INITIALS **
 # Load API Key from Environment Variable
 load_dotenv()
 
-# Redis client setup
-REDIS_CLIENT = redis.Redis(host="localhost", port=6379, decode_responses=True)
 
-# Intializin Natural language processor
-NLP_PROCESSOR = spacy.load("en_core_web_sm")
-
-
-
-# ** MODEL RELATED INITIALS **
 GROQ_API_KEY = os.getenv("GROQ_API_KEY_9413")
 
 # Available models
-MODEL_NAMES : Dict[
-    Literal['vision','specdec',"versatile", "small"], str
+MODELS : Dict[
+    Literal['vision','specdec',"versatile", "guard"], str
 ] = {
     "vision" : "llama-3.2-90b-vision-preview",
     "specdec" : "llama-3.3-70b-specdec",
     "versatile" : "llama-3.3-70b-versatile",
-    "small": "llama3-8b-8192"
+    "guard": "llama3-8b-8192"
 }
 
 # Initialize the chat model
-def initialise_model(model:Literal[
-    'vision','specdec',"versatile", "small"
-]) ->BaseChatModel:
-    return init_chat_model(
-        MODEL_NAMES[model],
-        model_provider="groq",
-        api_key=GROQ_API_KEY,
-    )
+BASE_MODEL = init_chat_model(
+    MODELS['vision'],
+    model_provider="groq",
+    api_key=GROQ_API_KEY,
+)
 
-MODELS : Dict[
-    Literal['vision','specdec',"versatile", "small"], BaseChatModel
-] = {
-    "vision" : initialise_model('vision'),
-    # "specdec" : initialise_model('specdec'),
-    # "versatile" : initialise_model('versatile'),
-    "small": initialise_model('small')
-}
+FILTER_MODEL = init_chat_model(
+    MODELS['guard'],
+    model_provider="groq",
+    api_key=GROQ_API_KEY,
+)
+
+SUMMERIZING_MODEL = init_chat_model(
+    MODELS['guard'],
+    model_provider="groq",
+    api_key=GROQ_API_KEY,
+)
 
 
-
-# ** EMBEDDING FUNCTION RELATED INITIALS **
 # Initialising embedding function
 model_name = "sentence-transformers/all-mpnet-base-v2"
 model_kwargs = {
@@ -77,8 +64,30 @@ EMBEDDING_FUNCTION = HuggingFaceEmbeddings(
 EMBEDDING_FUNCTION.show_progress = True
 
 
+# Load the existing config file and vector database
+def GET_CONFIGS(key:str):
+    try:
+        with open("config.json", "r") as file:
+            config = json.load(file)
+            return config.get(key)
+    except FileNotFoundError:
+        raise ValueError(" Config file not found!")
+    except json.JSONDecodeError:
+        raise ValueError("Invalid JSON format in config file!")
 
-# ** VECTOR DB RELATED INITIALS **
+COLLECTION_NAME = 'vishal'
+
+DIVISIONS: Dict[
+    Literal['db', 'doc', 'web'],
+    Literal['database', 'document', 'website']
+] = {
+    'db':'database',
+    'doc':'document',
+    'web':'website'
+}
+
+PLATFORM_NAME: Literal['wordpress', 'shopify', 'base'] = 'wordpress'
+
 def VECTOR_STORE(directory_name:str) -> Callable[[str], Chroma]:
     vectorstore:Chroma = Chroma(
         persist_directory=directory_name, 
@@ -104,33 +113,11 @@ VECTOR_DB: Dict[
     'database': VECTOR_STORE('chroma_db_directory/database_vector_db'),
 }
 
+# Redis client setup
+REDIS_CLIENT = redis.Redis(host="localhost", port=6379, decode_responses=True)
 
-
-
-# ** IMPORTANT STATIC INITIALS ** 
-# Load the existing config file and vector database
-def GET_CONFIGS(key:str):
-    try:
-        with open("config.json", "r") as file:
-            config = json.load(file)
-            return config.get(key)
-    except FileNotFoundError:
-        raise ValueError(" Config file not found!")
-    except json.JSONDecodeError:
-        raise ValueError("Invalid JSON format in config file!")
-
-COLLECTION_NAME = 'vishal'
-
-DIVISIONS: Dict[
-    Literal['db', 'doc', 'web'],
-    Literal['database', 'document', 'website']
-] = {
-    'db':'database',
-    'doc':'document',
-    'web':'website'
-}
-
-PLATFORM_NAME: Literal['wordpress', 'shopify', 'base'] = 'wordpress'
+# Intializin Natural language processor
+NLP_PROCESSOR = spacy.load("en_core_web_sm")
 
 # Rapid Fizz Entity Matching Score
 FILTERING_MINIMUM_SCORE : dict[
@@ -145,20 +132,9 @@ FILTERING_MINIMUM_SCORE : dict[
 # Define the prompt template
 PRE_PROMPTS:Dict[Literal['memory', 'system', 'division'], str] = {
     'memory': """
-        Summarize the following conversation in **no more than 300 words** while keeping key details and maintaining clarity. 
-
-        Your summary should:
-        - Retain **60% of the previous summary** to ensure continuity.
-        - Incorporate **40% of the current conversation** to capture recent updates.
-        - Be clear, concise, and not exceed the word limit.
-
-        Previous Summary:
-        {old_summary}
-
-        New Conversation:
-        {input_text}
-
-        Generate an updated summary while ensuring coherence and readability.
+        Summarize the following conversation in **no more than 200 words** while keeping the key details
+        \n\n{input_text}\n\n"
+        Your summary must be clear, concise, and not exceed the word limit."
     """,
     'system': """
         ### AI Chatbot Assistant for {company}  
@@ -170,7 +146,7 @@ PRE_PROMPTS:Dict[Literal['memory', 'system', 'division'], str] = {
         - For personal orders, use only **documented details with user/customer ID** (⚠ Never reveal IDs).  
 
         ### **Follow-Up Handling**  
-        - if last question exists, check if the new question follows the last question.  
+        - Check if the new question follows the last; if not, reset context.  
         - Example:  
         - **User:** "Show me the latest laptops."  
         - **User (Follow-Up):** "Which has the best battery?"  
@@ -284,9 +260,6 @@ PRE_PROMPTS:Dict[Literal['memory', 'system', 'division'], str] = {
 FALLBACK_MESSAGE = 'Sorry, i am unable to find any valid results. Please, try with another question 😊'
 
 
-
-# ** PATTERN RELATED INITIALS **
-
 # Keyword extractor patterns
 USER_PATTERN: Dict[
     Literal[
@@ -338,15 +311,11 @@ CHROMA_FILTER_PATTERNS: Dict[
     "product_category_pattern" : r'\b(categor(?:y|ies)|products?(?:types?|categor(?:y|ies))|categor(?:y|ies)details?)\b'
 }
 
-# Pre compiled follow pattern
-FOLLOW_UP_PATTERN:List = list(re.compile(pattern, re.IGNORECASE) for pattern in  [
-    r"\b(next|anymore|continues?|another|else|extend|next|go (?:aheads?|on)?)\b",  # Single-word implicit follow-ups
-    r"\b((?:what|how) about|(?:any|any others?|anything|something)\s*(?:alternatives?|else)\s*(than (?:this|these|that|those|them))?)\b",  # Comparative follow-ups
-    r"\b((?:tell|shows?|gives?|lists?|explains?)\s*(:?me|me in|it|in|(?:this|these|that|those|them|it) in)?\s*(?:deep|more|short|shorter))\b",  # Requesting more details
-    r"\b((?:ok|yes)?\s*(?:extend|shows?|gives?|lists?|explains?) (?:this|these|that|those|them|its?)|expand on that|continue with more)\b",  # Requesting more details
-    r"\b(and\?|what else|any others?|(?:lasts?|recents?|previous)\s*(?:question|responses?|results?|answers?))\b",  # Implicit contextual follow-ups
-    r"\b(do you have other|show me different|what else do you offer|similar products?|alternative brands?|explain more about this)\b",
-    r"\b((?:go aheads?|continues?|keep going|can you continue|any suggestions)\s*(on (?:this|these|that|those|them|its?)?))\b"
-])
-
-
+FOLLOW_UP_PATTERN:List = [
+    r"\b(next|others|anymore|continues?|another|else|extend|last|previous|next|go|go ahead)\b",  # Single-word implicit follow-ups
+    r"\b((?:what|how) about|(?:any|any others?|anything|something)\s*(?:alternatives?|else))\b",  # Comparative follow-ups
+    r"\b((?:tell|shows?|gives?|lists?|explains?)\s*(:?me|me in|it in|it|in)?\s*(?:deep|more))\b",  # Requesting more details
+    r"\b((?:ok|yes)?\s?(?:extend|shows?|gives?|lists?|explains?) it|expand on that|continue with more)\b",  # Requesting more details
+    r"\b(and\?|go on|keep going|can you continue|any suggestions|what else|any others?)\b",  # Implicit contextual follow-ups
+    r"\b(do you have other|show me different|what else do you offer|similar products?|alternative brands?)\b"
+]
