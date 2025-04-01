@@ -8,9 +8,9 @@ from langchain_chroma import Chroma
 from langchain.chains import RetrievalQA
 from langchain.schema import Document, BaseRetriever, SystemMessage, HumanMessage
 from langchain_core.language_models import BaseChatModel
-from chatbot.api_loader import PLATFORM_TYPES, ApiLoader
-from chatbot.memory import CustomChatMemory
-from chatbot.models import ChatInput
+from core.api_loader import PLATFORM_TYPES, ApiLoader
+from core.memory import CustomChatMemory
+from core.models import ChatInput
 import initial
 
 
@@ -44,7 +44,9 @@ class Rag:
 
     def __init__(self, input:ChatInput) -> None:
         self.input:ChatInput = input
-        self.message = input.message.lower()
+        self.input.message = input.message.strip().lower()
+        self.message = self.input.message
+        
         self.platform:PLATFORM_TYPES = initial.PLATFORM_NAME
         self.userId = 26 #{'wordpress':1, 'woocommerce':20, 'mysql':20, 'sqlite':2}
         self.base_url = 'http://localhost:10003/'
@@ -192,9 +194,9 @@ class Rag:
             print("ID BASE FILTER..............................\n", relevant_docs)
             
         # Re-filtering the documents
-        relevant_docs = await self._re_filter_documents(relevant_docs)
-        print("FINAL FILTER.................................\n", relevant_docs)
-        print("LIMITS...................", self.first_limit, self.second_limit)
+        # relevant_docs = await self._re_filter_documents(relevant_docs)
+        # print("FINAL FILTER.................................\n", relevant_docs)
+        # print("LIMITS...................", self.first_limit, self.second_limit)
         
         if not relevant_docs:
             return self.__get_fallback_retriever()
@@ -217,7 +219,7 @@ class Rag:
             self.first_limit = 100
             
         search_kwargs= {
-            'k':self.first_limit * 0.2, 
+            'k':10, 
             'fetch_k' : self.first_limit, 
             "lambda_mult": 0.8
         }
@@ -344,34 +346,34 @@ class Rag:
         product_pattern = initial.FILTER_TAG_PATTERNS['product_pattern']
         post_pattern = initial.FILTER_TAG_PATTERNS['post_pattern']
         helper_category_pattern = initial.FILTER_TAG_PATTERNS['helper_category_pattern']
+        excluding_category_pattern = initial.FILTER_TAG_PATTERNS['excluding_category_pattern']
         
+        tag = None
         # if its a follow up question just return previous filter tag
         if self.is_followUp:
             if tag := await self.memory.get_last_filter_tag():
-                return tag
+                return tag or None
 
-        tag = None   
-        if re.search(cart_pattern, self.input.message, re.IGNORECASE):
-            tag = 'cart_tag'
-            
-        elif (
-            re.search(helper_category_pattern, self.input.message, re.IGNORECASE) 
-            and re.search(product_pattern, self.input.message, re.IGNORECASE)
+        # Check for category-based tags first to avoid conflicts
+        if (
+            helper_category_pattern.search(self.input.message) 
+            and not excluding_category_pattern.search(self.input.message)
         ):
-            tag = 'product_category_tag'
-        elif re.search(product_pattern, self.input.message, re.IGNORECASE):
-            tag = 'product_tag'
-            
-        elif re.search(order_pattern, self.input.message, re.IGNORECASE):
-            tag = 'order_tag'
-            
-        elif (
-            re.search(helper_category_pattern, self.input.message, re.IGNORECASE) 
-            and re.search(post_pattern, self.input.message, re.IGNORECASE)
-        ):
-            tag = 'post_category_tag'
-        elif re.search(post_pattern, self.input.message, re.IGNORECASE):
-            tag = 'post_tag'
+            if product_pattern.search(self.input.message):
+                tag = 'product_category_tag'
+            elif post_pattern.search(self.input.message):
+                tag = 'post_category_tag'
+
+        # Check for other individual tags
+        if tag is None:
+            if cart_pattern.search(self.input.message):
+                tag = 'cart_tag'
+            elif product_pattern.search(self.input.message):
+                tag = 'product_tag'
+            elif order_pattern.search(self.input.message):
+                tag = 'order_tag'
+            elif post_pattern.search(self.input.message):
+                tag = 'post_tag'
         
         if tag:
             await self.memory.add_filter_tag(tag)

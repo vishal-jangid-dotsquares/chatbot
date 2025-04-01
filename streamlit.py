@@ -38,8 +38,7 @@ if user_input:
     # Prepare request payload
     payload = {
         "message": user_input,
-        "session_id": st.session_state["session_id"],
-        "language": language
+        "session_id": st.session_state["session_id"]
     }
 
     # Track the start time before making the request

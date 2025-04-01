@@ -7,8 +7,8 @@ from typing import List
 from sqlalchemy import create_engine, inspect
 from langchain_core.documents import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from chatbot.api_loader import ApiLoader
-from chatbot.extractor import ContentExtractor
+from core.api_loader import ApiLoader
+from core.extractor import ContentExtractor
 from PyPDF2 import PdfReader
 import initial
 
@@ -115,7 +115,7 @@ class ChromaDBPopulator:
         except Exception as e:
             print(f"Error loading document: {document} - {e}")
 
-    async def __load_pdf_document(self, document, vectorstore):
+    async def __load_pdf_document(self, document, vectorstore):``
         # Method to load .pdf documents
         try:
             # Using PyMuPDF to extract text from PDF

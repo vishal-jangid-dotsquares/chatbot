@@ -1,6 +1,6 @@
 from fastapi import FastAPI
-from chatbot.rag import Rag
-from chatbot.models import ChatInput
+from core.rag import Rag
+from core.models import ChatInput
 
 # Initialize FastAPI
 app = FastAPI()
@@ -11,4 +11,5 @@ async def chat(input: ChatInput):
 
     rag_instance = Rag(input)
     response = await rag_instance.invoke()
+    print("RESPONSE....................", response)
     return {'response' : response}

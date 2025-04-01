@@ -1,7 +1,7 @@
 import json
 import os
 import re
-from typing import Callable, Dict, List, Literal
+from typing import Any, Callable, Dict, List, Literal
 from dotenv import load_dotenv
 import redis.asyncio as redis
 import spacy
@@ -150,19 +150,21 @@ PRE_PROMPTS:Dict[
     'followUp':"""
         You are an AI system designed to determine whether a new user query is a **strict follow-up** to a previous query.
 
-        ### **Strict Definition of a Follow-up Query**
+        ### **Definition of a Strict Follow-up Query**
         A query is a follow-up **ONLY IF** it meets **ALL** of these conditions:
-        1. **It explicitly references something mentioned in the previous query.**
+        1. **It explicitly references something mentioned in the previous query** (e.g., "those", "it", "that product", "from before").
         2. **It cannot be answered meaningfully without first knowing the previous query.**
-        3. **It directly depends on details or context provided in the previous query.**
-        4. **If the new query is asked alone, it would be unclear or incomplete.**
+        3. **It directly builds on details, choices, or context provided in the previous query.**
+        4. **If asked alone, the new query would be unclear, incomplete, or ambiguous.**
+        5. **It must have an implicit or explicit dependency on the previous query.** (e.g., refining, clarifying, or extending it).
 
         ### **Strict Rejection Criteria**
         A query is **NOT** a follow-up if:
         - It introduces a **new topic or request** that was not explicitly stated in the previous query.
         - It **can be understood and answered independently** without needing the previous query.
-        - It refers to **a specific entity (e.g., "VITA") that is not explicitly mentioned** in the previous query.
-        - It is **only loosely related but does not depend on** the previous query.
+        - It refers to **a specific entity (e.g., "Stain and Glaze") that is not explicitly mentioned** in the previous query.
+        - It is **loosely related in topic but does not depend on** the previous query.
+        - It asks for general product information but then specifies a particular category in the next question.
 
         ---
         **Previous Query:** "{prev_query}"  
@@ -172,8 +174,7 @@ PRE_PROMPTS:Dict[
         ### **Instructions**
         - **ONLY respond with "yes" or "no".**  
         - **Do NOT assume** a follow-up if there is any ambiguity. If unsure, default to **"no"**.  
-        - **If the new query can be fully understood on its own, respond with "no"** even if the topics are similar.  
-
+        - **If the new query can be fully understood and answered alone, respond with "no"**, even if it shares a similar topic.  
     """,
     'memory': """
         Summarize the following conversation in **no more than 300 words** while keeping key details and maintaining clarity. 
@@ -345,14 +346,34 @@ FILTER_TAG_PATTERNS: Dict[
         'cart_pattern', 
         'order_pattern', 
         'product_pattern',
-        'helper_category_pattern'
-        ], str
+        'helper_category_pattern',
+        'excluding_category_pattern'
+        ], Any
     ] = {
-    'post_pattern': r'\b(posts?|(?:b|v)log(?:s?|ings?)|articles?|authors)\b',
-    'cart_pattern': r'\b(carts?|buckets?|saved? (?:items?|product?))\b',
-    "order_pattern" : r'\b(orde?(?:rs?|re?d)|p(?:e|u)rcha?ses?d?|buy|bought)\b',
-    "product_pattern" : r'\b((?:products?|items?)\s*(?:under|c(?:e|a)t(?:e|i|ie|ei)g(?:a|o)r(?:y|i|e|ee|eis?|ies?)))\b',
-    "helper_category_pattern" : r'\b(t(?:y|i)pes?|v(?:e|a)r(?:i|ei|ie)t(?:y|i|is|ies?|eis?)|c(?:e|a)t(?:e|i|ie|ei)g(?:a|o)r(?:y|i|e|ee|eis?|ies?)|kinds?|catalogs?|catalouges?)\b'
+    'post_pattern': re.compile(
+        r'\b(posts?|(?:b|v)log(?:s?|ings?)|articles?|authors)\b',
+        re.IGNORECASE
+    ),
+    'cart_pattern': re.compile(
+        r'\b(carts?|buckets?|saved? (?:items?|product?))\b', 
+        re.IGNORECASE
+    ),
+    "order_pattern" : re.compile(
+        r'\b(orde?(?:rs?|re?d)|p(?:e|u)rcha?ses?d?|buy|bought)\b',
+        re.IGNORECASE
+    ),
+    "product_pattern" : re.compile(
+        r'\b(?:products?|items?)\b', 
+        re.IGNORECASE
+    ),
+    "helper_category_pattern" : re.compile(
+        r'\b(t(?:y|i)pes?|v(?:e|a)r(?:i|ei|ie)t(?:y|i|is|ies?|eis?)|c(?:e|a)t(?:e|i|ie|ei)g(?:a|o)r(?:y|i|e|ee|eis?|ies?)|kinds?|catalogs?|catalouge?s?)\b', 
+        re.IGNORECASE
+    ),
+    'excluding_category_pattern': re.compile(
+        r'\b(?:similar|under|in|within|inside?|contains?|consists?|includes?|included)\s*(?:the|by|in)?\b',
+        re.IGNORECASE
+    )
 }
 
 CHROMA_FILTER_PATTERNS: Dict[

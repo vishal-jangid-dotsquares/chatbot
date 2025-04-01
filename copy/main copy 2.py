@@ -1,140 +1,272 @@
-import os
 import re
 import traceback
+import asyncio
+from typing import Any, Literal, Optional
+import uvicorn
+import nest_asyncio
 from fastapi import FastAPI
-from langchain.chat_models import init_chat_model
-from langchain_core.messages import trim_messages, HumanMessage
-import redis
-from langchain.memory import  ConversationBufferWindowMemory
-from langchain_community.chat_message_histories import RedisChatMessageHistory
-from chatbot.database import get_sql_agent
-from chatbot.models import ChatInput
-from chroma_handler import retrieve_response, ChromaDBPopulator
-from chatbot.database import DatabaseConnector
+from rapidfuzz import fuzz, process
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from chroma_handler import ChromaDBPopulator, DummyRetriever
+from chatbot.memory import CustomChatMemory
+from chatbot.models import ChatInput
+from langchain.chains import RetrievalQA
+from langchain.schema import Document
+import initial
 
 # Initialize FastAPI
 app = FastAPI()
 
-# Load API Key from Environment Variable
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "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")
+async def handle_greetings(input:ChatInput, memory):
+    message = input.message
 
-# Initialize the chat model
-model = init_chat_model(
-    "llama3-8b-8192", 
-    model_provider="groq",
-    max_tokens=100, 
-    api_key=GROQ_API_KEY
-)
-
-# Redis client setup
-redis_client = redis.Redis(host="localhost", port=6379, decode_responses=True)
-
-# fetch memory from redis memory
-def get_memory(session_id: str):
-    """Retrieve conversation memory from Redis"""
-    message_history = RedisChatMessageHistory(
-        session_id=session_id,
-        url="redis://localhost:6379/0"
-    )
-    return ConversationBufferWindowMemory(
-        memory_key="chat_history",
-        output_key="result",
-        chat_memory=message_history, 
-        return_messages=True,
-        k=7 
-    )
-
-# Define the prompt template
-PRE_PROMPTS = {
-    'system': """
-        - Always respond in **{language}**.  
-        -{user_query} and give the answer in structured and readable format and in an intresting way but keep it short.
-    """,
-    "db_product": """
-         **System Role:**  
-            📌 **Database Rules for product table:**  
-            The **products** table contains the following columns:  
-            - **id (INTEGER, PRIMARY KEY)** – Unique product identifier.  
-            - **name (TEXT)** – Product name.  
-            - **category (TEXT)** – Product category (e.g., 'Clothing', 'Electronics').  
-            - **price (REAL)** – Product price.  
-
-            ✅ **Allowed Queries:**  
-            - **Selection Queries (`SELECT`)** – Retrieve product details.  
-            - **Filtering (`WHERE`)** – Search by category, name, or price range.  
-            - **Sorting (`ORDER BY`)** – Order by price (highest/lowest) or name.  
-            - **Pattern Matching (`LIKE`)** – Find products by partial name or category match.  
-
-            ❌ **Restricted Queries:**  
-            - **NO `UPDATE`, `DELETE`, `INSERT`, or `DROP` operations.**  
-            - **DO NOT return raw SQL queries in responses.**  
-
-            ⚡ **Best Practices:**  
-            - **Limit results to 5** unless the user specifies a different limit.  
-            - **Optimize queries** using indexed columns (`id`, `category`).  
-            - **Provide direct and relevant answers** without unnecessary possibilities.  
-
-            ---
-
-            📌 **Example Queries & Responses:**  
-
-            ✅ **User Input:** _List all products in the 'Electronics' category._  
-            ➡ **AI Response:** _"Here are 5 products in Electronics: Laptop ($1200), Smart TV ($899), ..."_
-
-            ✅ **User Input:** _Show the cheapest products._  
-            ➡ **AI Response:** _"Here are 5 cheapest products: T-Shirt ($9.99), Mouse ($15), ..."_
-
-            ✅ **User Input:** _How many products are in the 'Clothing' category?_  
-            ➡ **AI Response:** _"There are 42 products in the Clothing category."_
-
-            ✅ **User Input:** _What are the most expensive laptops?_  
-            ➡ **AI Response:** _"Here are the top 5 expensive laptops: MacBook Pro ($2499), ..."_
-
-            ---
-
-            🚀 **Now, provide a user query, and I will fetch the most relevant products!**  
-
-        User Query: {user_query}
-        """
-}
-
-def get_products_agent(user_query):
-    """LangChain agent generates SQL queries for SQLite automatically."""
+    greeting_pattern = initial.GREETING_PATTERNS['greeting_pattern']
+    strict_gretting_pattern = initial.GREETING_PATTERNS['strict_gretting_pattern']
     
-    sql_agent = get_sql_agent(model)
-    stream = sql_agent.invoke({"action": "sql_db_query", "input": user_query})
-    return stream
+    response = None
+    if (re.search(greeting_pattern, message)
+        or re.search(strict_gretting_pattern, message)
+    ):
+        response = "👋 Hello! 😊 How can I help you today? 🤔"
+    elif 'nice to meet you' in message:
+        response = "🙂 Nice to meet you too! 👋 How can I assist you today? 🤔"
+    elif 'how are you' in message:
+        response = "😊 I'm good, thanks! 👍 Ready to help 🤔"
+
+    if response:
+        asyncio.create_task(memory.add_memory(message, response))
+    return response
+    
+def attach_user_id(input:ChatInput):
+    user_id = 14 #2
+    digit_pattern = initial.USER_PATTERN['digit_pattern']
+    entity_pattern = initial.USER_PATTERN['entity_pattern']
+    exclued_pattern = initial.USER_PATTERN['exclued_pattern']
+    
+    is_id_attached = False
+    if (user_id 
+        and re.search(digit_pattern, input.message) 
+        and re.search(entity_pattern, input.message)
+        and not re.search(exclued_pattern, input.message)
+    ):
+        input.message += f' and where customer/user id is {user_id}'
+        is_id_attached = True
+    
+    return input.message, is_id_attached, user_id
+
+def filter_tags(input:ChatInput):
+    order_pattern = initial.FILTER_TAG_PATTERNS['order_pattern']
+    product_pattern = initial.FILTER_TAG_PATTERNS['product_pattern']
+    product_category_pattern = initial.FILTER_TAG_PATTERNS['product_category_pattern']
+    category_pattern = initial.FILTER_TAG_PATTERNS['category_pattern']
+    continue_pattern = initial.FILTER_TAG_PATTERNS['continue_pattern']
+    
+    redis_tag_key = f"{input.session_id}_tag_key"
+    tag = None
+    if (
+        (re.search(product_category_pattern, input.message, re.IGNORECASE) 
+        and re.search(product_pattern, input.message, re.IGNORECASE))
+        or re.search(category_pattern, input.message, re.IGNORECASE)
+    ):
+        tag = 'category_tag'
+    elif re.search(product_pattern, input.message, re.IGNORECASE):
+        tag = 'product_tag'
+    elif re.search(order_pattern, input.message, re.IGNORECASE):
+        tag = 'order_tag'
+    elif re.search(continue_pattern, input.message, re.IGNORECASE):
+        if extracted_tag := initial.REDIS_CLIENT.get(redis_tag_key):
+            tag = extracted_tag
+    
+    if tag:
+        initial.REDIS_CLIENT.set(redis_tag_key, tag)
+    print("FILTER TAG AND MESSAGE.......................", input.message, tag)
+    return tag
+
+def entity_extractor(
+        input:ChatInput, 
+        division: Literal['database', 'document', 'website']
+    ):
+    doc = initial.NLP_PROCESSOR(input.message)
+
+    # Extract named entities
+    grammer_entities = ['NOUN', 'PROPN', 'ADJ']
+    if division == "document":
+        grammer_entities.append('VERB')
+        
+    entities = ""
+    for ent in doc:
+        if ent.pos_ in grammer_entities:
+            entities += ent.text + " "
+            print(f"ENTITIES: {ent.text} -> {ent.pos_}")
+            
+    entities = " ".join(list(set(ent.text for ent in doc if ent.pos_ in grammer_entities)))
+    return entities or None
+            
+def enhanced_retriever(
+        input:ChatInput, 
+        prompt:str, 
+        retriever,
+        division: Literal['database', 'document', 'website'],
+        filter_tag: Any,
+        is_id_attached:bool, 
+        user_id:Optional[int], 
+    ):
+
+    filtered_docs: list[Document] = []
+    relevant_docs = retriever.get_relevant_documents(query=prompt)
+    
+    # extracting tags and entities for filtering
+    entities = None
+    if (division == 'database' and filter_tag is None
+        or division == 'document'):
+        entities = entity_extractor(input, division)
+    
+    for doc in relevant_docs:
+        content = doc.page_content 
+        
+        if division == "database" and (is_id_attached and user_id):
+            if not re.search(rf"\s{user_id}[,]", doc.page_content):
+                content = None
+                print("NOT ATTACHED.....................................")
+
+        if entities:
+            searchable_content = doc.page_content
+            if division == "document":
+                searchable_content = doc.page_content.split("Answer")[0]
+                
+            best_match, score, _ = process.extractOne(
+                entities, 
+                [searchable_content], 
+                scorer=fuzz.WRatio
+            )
+
+            if division == "database":
+                print("BEST MATCH..........", division, score, best_match)
+            # Check if the best match is good enough
+            threshold = initial.THRESHOLD[division]
+            if not best_match or (best_match and score < threshold):
+                content = None
+                print("NO ENTITIY.....................")
+            
+        print('---------------------------------------------------------------------------------------------------------------')
+        if content:
+            print("**********",content)
+            filtered_docs.append(Document(
+                page_content=content,
+                metadata={}
+            ))
+        print(doc.page_content)
+        print(doc.metadata)
+        print('---------------------------------------------------------------------------------------------------------------')
+
+    if not filtered_docs:
+        filtered_docs.append(Document(
+            page_content = "No data found",
+            metadata = {}
+        ))
+    
+    retriever = DummyRetriever(filtered_docs=filtered_docs)
+    return retriever
+
+def retrieve_response(
+        input:ChatInput, 
+        prompt:str, 
+        is_id_attached:bool, 
+        user_id:int, 
+        division: Literal['database', 'document', 'website']
+    ):
+    try:     
+        vector_store = initial.VECTOR_DB[division](initial.COLLECTION_NAME)
+        
+        search_kwargs= {
+            'k':500 if division == 'database' else 100,
+            # 'filter':  {'priority': division}
+        }
+        
+        # filtering with tags
+        filter_tag = None
+        if division == 'database' and (filter_tag := filter_tags(input)): 
+            search_kwargs['filter'] = {'tags': filter_tag}
+
+        retriever = vector_store.as_retriever(
+            search_type="mmr",
+            search_kwargs=search_kwargs
+        )
+        
+        retriever = enhanced_retriever(
+            input, prompt, retriever, division, filter_tag, is_id_attached, user_id
+        )
+        
+        # Create a RetrievalQA Chain
+        qa_chain = RetrievalQA.from_chain_type(
+            llm=initial.BASE_MODEL, 
+            chain_type="stuff", 
+            retriever=retriever,
+            return_source_documents=True,
+        )
+        
+        invoked_response = qa_chain.invoke({'query':prompt})
+        response = invoked_response.get('result', "No response available.")
+        return response
+    except Exception as e:
+        print(f"Exception while retrieving response: {str(e)}")
+        traceback.print_exc()
+        return None
 
 @app.post("/chat/")
 async def chat(input: ChatInput):
     """Handles user queries and maintains conversation history."""
-    try:
-        # Retrieve memory for the session
-        memory = get_memory(input.session_id)
-        pattern = r'\b(?:show|list|find|get|search|fetch|retrieve|display)\b'
-        
-        if re.search(pattern, input.message,re.IGNORECASE):
-            prompt = PRE_PROMPTS["db_product"].format(user_query = input.message)
-            response = get_products_agent(prompt)
-            return {'response': response.get('output', 'No matching products available!')}
-        else:
-            qa_chain = retrieve_response(input.message, model, memory)
-            prompt = PRE_PROMPTS['system'].format(user_query = input.message, language=input.language)
-            retrieved_answer = qa_chain.invoke({'query':input.message})
-            memory.chat_memory.add_user_message(input.message)
-            memory.chat_memory.add_ai_message(retrieved_answer.get("result", "No response available."))
-            return {"response": retrieved_answer.get('result') or "No response available."}
 
+    try:
+        # Initializing memory
+        memory = CustomChatMemory()
+        memory.add_user(input.session_id)
+        
+        input.message = input.message.lower()
+        
+        # Handle greeting prompts
+        if response := (await handle_greetings(input, memory)):
+            return {'response':response}
+        
+        # Attaching required informations - user_id, memory, pre_prompt
+        new_prompt, is_id_attached, user_id = attach_user_id(input)
+        
+        conversation_history = await memory.get_conversation()
+        final_prompt = initial.PRE_PROMPTS['system'].format(
+            user_query = new_prompt,
+            history = conversation_history
+        )
+
+        params = (input, final_prompt, is_id_attached, user_id)
+        if is_id_attached:
+            response = retrieve_response(*params, initial.DIVISIONS['db'])
+        else:
+            response = retrieve_response(*params, initial.DIVISIONS['doc'])
+            if response and ("valid" in response):
+                response = retrieve_response(*params, initial.DIVISIONS['db'])
+                
+        if response:
+            # Summarizing new memory and saving it asynchronously
+            asyncio.create_task(memory.add_memory(input.message, response))
+        return {'response':response or initial.FALLBACK_MESSAGE}  
     except Exception:
         traceback.print_exc()
-        return {"response": 'Sorry, i am unable to find any valid results'}
+        return {"response": initial.FALLBACK_MESSAGE}
 
+
+
+# It allows to run nested event loops
+# first loop of asyncio and second one of uvicorn
+
+async def main():
+    populator = ChromaDBPopulator()
+    await populator.populate_chroma_db()
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+    
 
 # Run the application
 if __name__ == "__main__":
-    import uvicorn
-    # populator = ChromaDBPopulator()    
-    # populator.populate_chroma_db()
+    nest_asyncio.apply()
+    asyncio.run(main())
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
