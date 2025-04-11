@@ -12,8 +12,6 @@ from core.api_loader import PLATFORM_TYPES, ApiLoader
 from core.memory import CustomChatMemory
 from core.models import ChatInput
 import initial
-from langchain_core.runnables import RunnableLambda, RunnablePassthrough, RunnableParallel, RunnableBranch, RunnableSequence
-
 
 
 DIVISION_TYPE = Literal['database', 'document', 'website']
@@ -27,9 +25,6 @@ class DummyRetriever(BaseRetriever):
     def _get_relevant_documents(self, query: str) -> list[Document]:
         return self.filtered_docs
     
-    
-def run(func):
-    return RunnableLambda(lambda *args, **kwargs: func(*args, **kwargs))
 
 class Rag:
     userId:Optional[int] = None 
@@ -62,7 +57,12 @@ class Rag:
      
     async def invoke(self) -> str:
         try:           
-            # Attaching user id
+            # Handle greeting prompts
+            greeting_response = self.__greeting_handler()
+            if greeting_response:
+                return greeting_response
+            
+            # Attaching user id and preprompt
             self.__attach_userId()
             response = await self._response_pipeline()
 
