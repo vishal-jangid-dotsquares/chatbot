@@ -51,8 +51,8 @@ MODELS : Dict[
     BaseChatModel
 ] = {
     "vision" : initialise_model('vision'),
-    # "specdec" : initialise_model('specdec'),
-    # "versatile" : initialise_model('versatile'),
+    "specdec" : initialise_model('specdec'),
+    "versatile" : initialise_model('versatile'),
     "small": initialise_model('small')
 }
 
@@ -197,7 +197,7 @@ PRE_PROMPTS:Dict[
         ### AI Chatbot Assistant for {company}  
         *Managed by Vishal*  
 
-        - **Language:** Always respond in English.  
+        - **Language:** Respond in the same language as user questioning.  
         - **Format:** Keep answers structured, engaging, and under 100 words. Use icons for clarity if needed.  
         - **Product & Content Queries:** Suggest relevant options from provided data or given past conversation. If a link exists, include it.  
         - For personal orders, use only **documented details with user/customer ID** (⚠ Never reveal IDs).  

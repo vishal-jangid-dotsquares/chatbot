@@ -1,21 +1,18 @@
 import json
-from pdb import run
 import re
 import traceback
 import asyncio
-from typing import Any, AsyncIterator, List, Literal, Optional
+from typing import Any, List, Literal, Optional
 
 from langchain_chroma import Chroma
 from langchain.chains.retrieval_qa.base import RetrievalQA
-from langchain.schema import Document, BaseRetriever
-from langchain.chains.retrieval import create_retrieval_chain
-from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain.schema import Document, BaseRetriever, SystemMessage, HumanMessage
 from langchain_core.language_models import BaseChatModel
 from core.api_loader import PLATFORM_TYPES, ApiLoader
 from core.memory import CustomChatMemory
 from core.models import ChatInput
 import initial
-from langchain_core.runnables import RunnableLambda 
+from langchain_core.runnables import RunnableLambda as runnable, RunnablePassthrough, RunnableParallel, RunnableBranch, RunnableSequence
 
 
 
@@ -74,10 +71,10 @@ class Rag:
                         response
                     )
                 )
-            return self._stream(response or initial.FALLBACK_MESSAGE)
+            return response or initial.FALLBACK_MESSAGE
         except Exception:
             traceback.print_exc()
-            return self._stream(initial.FALLBACK_MESSAGE)
+            return initial.FALLBACK_MESSAGE  
 
     async def _response_pipeline(self) -> str:
         # Handle greeting prompts
@@ -105,7 +102,7 @@ class Rag:
         
     async def _retrieve_response(self, retriever) -> str:
         await self.__attach_pre_prompt()
-        print("DOC..................", retriever.invoke(input=self.message))
+
         # Create a RetrievalQA Chain
         qa_chain = RetrievalQA.from_chain_type(
             llm=initial.MODELS['vision'], 
@@ -113,9 +110,10 @@ class Rag:
             retriever=retriever,
             return_source_documents=True,
         )
-
-        invoked_response = qa_chain.invoke({'query': self.pre_prompt_message})
-        return invoked_response.get('result')  
+        
+        invoked_response = qa_chain.invoke({'query':self.pre_prompt_message})
+        response = invoked_response.get('result', "No response available.")
+        return response  
 
     async def _handle_cart_enquiry(self):
         if self.platform not in ['wordpress', 'shopify']:
@@ -366,12 +364,15 @@ class Rag:
         return tag
     
     async def __find_division_type(self) -> DIVISION_TYPE:
-        prompt = initial.PRE_PROMPTS['division'].format(
+        system_prompt = initial.PRE_PROMPTS['division'].format(
             user_query = self.message,
         )
-
+        
         llm = initial.MODELS['vision']
-        response:Any = llm.invoke(input=prompt)
+        response:Any = llm.invoke([
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=self.message)
+        ])
 
         content = response.content
         if any(division for division in ['website', 'database', 'document'] if division in content):
@@ -387,9 +388,11 @@ class Rag:
             prev_query = await self.memory.get_last_message(),
             current_query = self.input.message
         )
-
+    
         llm:BaseChatModel =  initial.MODELS['vision']
-        response:Any = llm.invoke(input=prompt)
+        response:Any = llm.invoke(
+            [HumanMessage(content=prompt)]
+        )
         print("DETECT FOLLOW UP......................", self.input.message, await self.memory.get_last_message())
         print("FOLLOW UP CONTENT.........................", response.content)
         answer = response.content.lower()
@@ -412,11 +415,5 @@ class Rag:
     def __get_fallback_retriever(self) -> DummyRetriever:
         retriever = DummyRetriever(filtered_docs = self.empty_document)
         return retriever
+            
 
-    def _stream(self, response:str):
-        async def generator_func(_: dict) -> AsyncIterator[str]:
-            parts = re.findall(r'\S+|\s+', response)
-            for part in parts:
-                await asyncio.sleep(0.1)  # smoother experience
-                yield part
-        return RunnableLambda(generator_func)
